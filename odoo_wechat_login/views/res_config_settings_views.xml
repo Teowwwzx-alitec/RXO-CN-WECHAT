@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="res_config_settings_view_form" model="ir.ui.view">
+            <field name="name">res.config.settings.view.form.inherit.wechat</field>
+            <field name="model">res.config.settings</field>
+            <field name="priority" eval="40"/>
+            <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//form" position="inside">
+                    <app data-string="微信" string="微信" name="odoo_wechat_login">
+                        <block title="公共参数" name="wechat_login_common_parameter">
+                            <div class="alert alert-warning">
+                                <p><strong>温馨提示：</strong>您可以在<strong>微信开发平台</strong>得到这些信息！</p>
+                                <a href="https://open.weixin.qq.com" target="_blank">
+                                    <span>参数介绍</span>
+                                </a>
+                            </div>
+                            <setting id="companies_corp_id" company_dependent="1">
+                                <div class="content-group">
+                                    <div class="mt16">
+                                        <div>
+                                            <label for="wechat_login_appid" class="col-2 o_light_label"/>
+                                            <field name="wechat_login_appid"/>
+                                        </div>
+                                    </div>
+                                    <div class="mt16">
+                                        <div>
+                                            <label for="wechat_login_appsecret" class="col-2 o_light_label"/>
+                                            <field name="wechat_login_appsecret" password="True"/>
+                                        </div>
+                                    </div>
+                                    <div class="mt16">
+                                        <div>
+                                            <label for="wechat_login_return_url" class="col-2 o_light_label"/>
+                                            <field name="wechat_login_return_url"/>
+                                            <span class="fa fa-lg fa-info" title="授权回调域url+/wechat/login"/>
+                                        </div>
+                                    </div>
+                                    <div class="mt16">
+                                        <div>
+                                            <label for="wechat_login_bind_url" class="col-2 o_light_label"/>
+                                            <field name="wechat_login_bind_url"/>
+                                            <span class="fa fa-lg fa-info" title="授权回调域url+/wechat/bind"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </setting>
+                        </block>
+                    </app>
+                </xpath>
+            </field>
+        </record>
+
+        <record id="action_wechat_login_config" model="ir.actions.act_window">
+            <field name="name">微信</field>
+            <field name="res_model">res.config.settings</field>
+            <field name="view_mode">form</field>
+            <field name="target">inline</field>
+            <field name="context">{'module' : 'odoo_wechat_login', 'bin_size': False}</field>
+        </record>
+
+    </data>
+</odoo>

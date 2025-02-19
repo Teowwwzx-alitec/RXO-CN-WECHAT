@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<templates>
+    <t t-name="SyncUser.ListView.Buttons" t-inherit="web.ListView.Buttons" t-inherit-mode="primary" owl="1">
+    
+        <xpath expr="//div[hasclass('o_list_buttons')]" position="inside">
+            <!-- <button type="button" class="btn btn-secondary o_button_download_import_tmpl"
+                t-on-click.stop.prevent="() => this.actionService.doAction('base.action_download_major_tmpl')"> -->
+            <button type="button" class="btn btn-secondary o_button_download_import_tmpl"
+                t-on-click.stop.prevent="onClickSyncBtn">
+                同步用户
+            </button>
+        </xpath>
+    </t>
+</templates>

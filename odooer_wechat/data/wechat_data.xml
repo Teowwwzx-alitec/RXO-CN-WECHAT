@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data noupdate="1">
+        <record id="wx_config_data_1" model="wx.config">
+            <field name="name">公众号配置</field>
+            <field name="wx_appid">wxxxxxxx</field>
+        </record>
+    </data>
+</odoo>

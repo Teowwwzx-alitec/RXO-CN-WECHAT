@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="view_users_tree" model="ir.ui.view">
+            <field name="name">res.users.tree</field>
+            <field name="model">res.users</field>
+            <field name="inherit_id" ref="base.view_users_tree"/>
+            <field name="arch" type="xml">
+                <data>
+                    <field name="login_date" position="after">
+                        <field name="openid" />
+                    </field>
+                </data>
+            </field>
+        </record>
+
+        <!-- Update user form !-->
+        <record id="view_users_form" model="ir.ui.view">
+            <field name="name">res.users.form</field>
+            <field name="model">res.users</field>
+            <field name="inherit_id" ref="base.view_users_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//button" position="after">
+                    <button name="bind_to_wechat" string="绑定微信" type="object" class="btn-primary"/>
+                </xpath>
+            </field>
+        </record>
+
+        <!-- Update Preferences form !-->
+        <record id="view_users_form_simple_modif" model="ir.ui.view">
+            <field name="name">res.users.preferences.form</field>
+            <field name="model">res.users</field>
+            <field name="inherit_id" ref="base.view_users_form_simple_modif"/>
+            <field name="arch" type="xml">
+                <xpath expr="//page/group[@name='preference_contact']" position="after">
+                    <button name="bind_to_wechat" string="绑定微信" type="object" class="btn-primary"/>
+                </xpath>
+            </field>
+        </record>
+
+    </data>
+</odoo>
