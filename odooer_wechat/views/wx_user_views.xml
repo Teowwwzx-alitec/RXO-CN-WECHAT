@@ -45,7 +45,7 @@
                     <button name="action_sync_user" type="object" string="同步用户"/>
                 </header>
                 <sheet>
-                    <widget name="web_ribbon" title="已归档" bg_color="bg-danger" attrs="{'invisible': [('active', '=', True)]}"/>
+                    <widget name="web_ribbon" title="已归档" bg_color="bg-danger" invisible="active"/>
                     <field name="active" invisible="1"/>
                     <group>
                         <group>
