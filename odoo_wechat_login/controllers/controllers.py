@@ -22,6 +22,8 @@ class OAuthLogin(Home):
     print(">>> [DEBUG] OAuthLogin")
 
     def list_providers(self):
+        print(">>> [DEBUG] list_providers")
+
         # 获取所有的OAuth服务商
         providers = super(OAuthLogin, self).list_providers()
         for provider in providers:
@@ -68,6 +70,8 @@ class OAuthLogin(Home):
 
 
 class OAuthController(Controller):
+    print(">>> [DEBUG] OAuthController(Controller)")
+
     # 此路由只会被分发网址使用，进行数据处理后，转发至各个网址进行登录
     @http.route("/wechat/login", type="http", auth="none")
     def wechat_login(self, **kw):
@@ -96,7 +100,10 @@ class OAuthController(Controller):
 
     # 进行数据处理后，转发至各个网址进行绑定
     @http.route("/wechat/bind", type="http", auth="none")
+
     def bind_to_wechat(self, **kw):
+        print(">>> [DEBUG] bind_to_wechat")
+
         state = simplejson.loads(base64.b64decode(kw.get("state")).decode())
         redirect_uri = state["redirect_uri"]
         # 以上两步未做判断，因为是自己加的参数，即使请求失败也不会出错
