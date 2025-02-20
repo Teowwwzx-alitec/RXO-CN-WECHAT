@@ -19,7 +19,7 @@ _logger = logging.getLogger(__name__)
 
 
 class OAuthLogin(Home):
-    print(">>> [DEBUG] OAuthLogin")
+    print(">>> [DEBUG] OAuthLogin", flush=True)
 
     def list_providers(self):
         print(">>> [DEBUG] list_providers")
@@ -70,7 +70,7 @@ class OAuthLogin(Home):
 
 
 class OAuthController(Controller):
-    print(">>> [DEBUG] OAuthController(Controller)")
+    print(">>> [DEBUG] OAuthController(Controller)", flush=True)
 
     # 此路由只会被分发网址使用，进行数据处理后，转发至各个网址进行登录
     @http.route("/wechat/login", type="http", auth="none")
@@ -102,7 +102,7 @@ class OAuthController(Controller):
     @http.route("/wechat/bind", type="http", auth="none")
 
     def bind_to_wechat(self, **kw):
-        print(">>> [DEBUG] bind_to_wechat")
+        print(">>> [DEBUG] bind_to_wechat", flush=True)
 
         state = simplejson.loads(base64.b64decode(kw.get("state")).decode())
         redirect_uri = state["redirect_uri"]
@@ -129,10 +129,10 @@ class OAuthController(Controller):
     # 进行数据处理绑定
     @http.route("/wechat/bind/write", type="http", auth="none")
     def bind_to_wechat_write(self, **kw):
-        print(">>> [DEBUG] bind_to_wechat_write called with params:", kw)
+        print(">>> [DEBUG] bind_to_wechat_write called with params:", kw, flush=True)
 
         def gettoken(code):
-            print(">>> [DEBUG] gettoken called with code:", code)
+            print(">>> [DEBUG] gettoken called with code:", code, flush=True)
 
             appid = (
                 request.env["ir.config_parameter"]
@@ -144,7 +144,7 @@ class OAuthController(Controller):
                 .sudo()
                 .get_param("odoo_wechat_login.appsecret")
             )
-            print(">>> [DEBUG] gettoken called with code:", code)
+            print(">>> [DEBUG] gettoken called with code:", code, flush=True)
 
             url_token = (
                 "https://api.weixin.qq.com/sns/oauth2/access_token?appid=%s&secret=%s&code=%s&grant_type=authorization_code"
