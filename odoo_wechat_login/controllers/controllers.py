@@ -19,6 +19,8 @@ _logger = logging.getLogger(__name__)
 
 
 class OAuthLogin(Home):
+    print(">>> [DEBUG] OAuthLogin")
+
     def list_providers(self):
         # 获取所有的OAuth服务商
         providers = super(OAuthLogin, self).list_providers()
@@ -120,7 +122,11 @@ class OAuthController(Controller):
     # 进行数据处理绑定
     @http.route("/wechat/bind/write", type="http", auth="none")
     def bind_to_wechat_write(self, **kw):
+        print(">>> [DEBUG] bind_to_wechat_write called with params:", kw)
+
         def gettoken(code):
+            print(">>> [DEBUG] gettoken called with code:", code)
+
             appid = (
                 request.env["ir.config_parameter"]
                 .sudo()
@@ -131,6 +137,8 @@ class OAuthController(Controller):
                 .sudo()
                 .get_param("odoo_wechat_login.appsecret")
             )
+            print(">>> [DEBUG] gettoken called with code:", code)
+
             url_token = (
                 "https://api.weixin.qq.com/sns/oauth2/access_token?appid=%s&secret=%s&code=%s&grant_type=authorization_code"
                 % (appid, secret, code)
