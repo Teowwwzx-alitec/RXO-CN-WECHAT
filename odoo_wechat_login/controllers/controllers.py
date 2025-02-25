@@ -3,6 +3,7 @@
 import base64
 import logging
 from odoo.http import request
+import hashlib
 
 import simplejson
 import requests
@@ -70,8 +71,32 @@ class OAuthLogin(Home):
 
 
 class OAuthController(Controller):
-    print(">>> [DEBUG] OAuthController(Controller)", flush=True)
+    # New route for WeChat server verification
+    @http.route("/wechat", type="http", auth="none", methods=["GET", "POST"])
+    def wechat_verify(self, **kw):
+        """Handles WeChat server verification and message handling"""
+        if request.httprequest.method == "GET":
+            token = request.env["ir.config_parameter"].sudo().get_param("odoo_wechat_login.token")
+            signature = kw.get("signature", "")
+            timestamp = kw.get("timestamp", "")
+            nonce = kw.get("nonce", "")
+            echostr = kw.get("echostr", "")
 
+            if self.check_signature(token, signature, timestamp, nonce):
+                return echostr  # Verification successful
+            else:
+                return "Verification failed"
+
+        return "Unsupported method", 405
+
+    def check_signature(self, token, signature, timestamp, nonce):
+        """Verify WeChat server signature"""
+        tmpArr = [token, timestamp, nonce]
+        tmpArr.sort()
+        tmpStr = "".join(tmpArr).encode("utf-8")
+        tmpStr = hashlib.sha1(tmpStr).hexdigest()
+        return tmpStr == signature
+    
     # 此路由只会被分发网址使用，进行数据处理后，转发至各个网址进行登录
     @http.route("/wechat/login", type="http", auth="none")
     def wechat_login(self, **kw):

@@ -45,6 +45,13 @@
                                             <span class="fa fa-lg fa-info" title="授权回调域url+/wechat/bind"/>
                                         </div>
                                     </div>
+                                    <div class="mt16">
+                                        <div>
+                                            <label for="wechat_login_token" class="col-2 o_light_label"/>
+                                            <field name="wechat_login_token"/>
+                                            <span class="fa fa-lg fa-info" title="授权回调域url+/wechat/token"/>
+                                        </div>
+                                    </div>
                                 </div>
                             </setting>
                         </block>

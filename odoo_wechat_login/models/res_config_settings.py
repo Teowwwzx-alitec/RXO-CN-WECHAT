@@ -22,3 +22,8 @@ class ResConfigSettings(models.TransientModel):
         string="微信bind_url",
         help="授权回调域url+/wechat/bind",
     )
+    wechat_login_token = fields.Char(
+        config_parameter="odoo_wechat_login.token",
+        string="微信token",
+        help="授权回调域url+/wechat/token",
+    )
