@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <record id="res_config_settings_view_form" model="ir.ui.view">
+            <field name="name">res.config.settings.view.form.inherit.lark</field>
+            <field name="model">res.config.settings</field>
+            <field name="priority" eval="40"/>
+            <field name="inherit_id" ref="base.res_config_settings_view_form"/>
+            <field name="arch" type="xml">
+                <xpath expr="//form" position="inside">
+                    <app data-string="飞书" string="飞书" name="odoo_lark_login">
+                        <block title="公共参数" name="lark_login_common_parameter">
+                            <div class="alert alert-warning">
+                                <p><strong>温馨提示：</strong>您可以在<strong>飞书开放平台</strong>获取这些信息！</p>
+                                <a href="https://open.larksuite.com" target="_blank">
+                                    <span>参数介绍</span>
+                                </a>
+                            </div>
+                            <setting id="companies_corp_id" company_dependent="1">
+                                <div class="content-group">
+                                    <div class="mt16">
+                                        <div>
+                                            <label for="lark_login_appid" class="col-2 o_light_label"/>
+                                            <field name="lark_login_appid"/>
+                                        </div>
+                                    </div>
+                                    <div class="mt16">
+                                        <div>
+                                            <label for="lark_login_appsecret" class="col-2 o_light_label"/>
+                                            <field name="lark_login_appsecret" password="True"/>
+                                        </div>
+                                    </div>
+                                    <div class="mt16">
+                                        <div>
+                                            <label for="lark_login_return_url" class="col-2 o_light_label"/>
+                                            <field name="lark_login_return_url"/>
+                                            <span class="fa fa-lg fa-info" title="授权回调域url+/lark/login"/>
+                                        </div>
+                                    </div>
+                                    <div class="mt16">
+                                        <div>
+                                            <label for="lark_login_bind_url" class="col-2 o_light_label"/>
+                                            <field name="lark_login_bind_url"/>
+                                            <span class="fa fa-lg fa-info" title="授权回调域url+/lark/bind"/>
+                                        </div>
+                                    </div>
+                                    <div class="mt16">
+                                        <div>
+                                            <label for="lark_login_token" class="col-2 o_light_label"/>
+                                            <field name="lark_login_token"/>
+                                            <span class="fa fa-lg fa-info" title="授权回调域url+/lark/token"/>
+                                        </div>
+                                    </div>
+                                </div>
+                            </setting>
+                        </block>
+                    </app>
+                </xpath>
+            </field>
+        </record>
+
+        <record id="action_lark_login_config" model="ir.actions.act_window">
+            <field name="name">飞书</field>
+            <field name="res_model">res.config.settings</field>
+            <field name="view_mode">form</field>
+            <field name="target">inline</field>
+            <field name="context">{'module' : 'odoo_lark_login', 'bin_size': False}</field>
+        </record>
+
+    </data>
+</odoo>

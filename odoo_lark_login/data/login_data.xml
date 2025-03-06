@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <data noupdate="1">
+        <!-- 飞书登录参数 -->
+        <record id="lark_login" model="auth.oauth.provider">
+            <field name="name">飞书扫码登录</field>
+            <field name="client_id">请替换AppID</field>
+            <field name="enabled" eval="True"/>
+            <field name="body">飞书登录</field>
+            <field name="css_class">fa fa-lark</field>
+            <!-- Lark OAuth 入口地址；请确认该地址是否与Lark开放平台的文档一致 -->
+            <field name="auth_endpoint">https://open.larksuite.com/open-apis/authen/v1/index</field>
+            <!-- scope可根据实际需求调整 -->
+            <field name="scope">lark_login</field>
+            <!-- 验证/换取access_token的接口 -->
+            <field name="validation_endpoint">https://open.larksuite.com/open-apis/authen/v1/access_token</field>
+            <!-- 如果需要调用用户信息接口，可以设置data_endpoint；否则留空 -->
+            <field name="data_endpoint"></field>
+        </record>
+    </data>
+</odoo>
