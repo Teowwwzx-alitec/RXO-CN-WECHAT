@@ -20,7 +20,7 @@ from odoo.addons.auth_oauth.controllers.main import OAuthLogin as BaseOAuthLogin
 _logger = logging.getLogger(__name__)
 
 
-class OAuthLogin(Home):
+class OAuthLogin(BaseOAuthLogin):
     def list_providers(self):
         _logger.debug(">>> [DEBUG] list_providers for Lark")
         providers = super(OAuthLogin, self).list_providers()
