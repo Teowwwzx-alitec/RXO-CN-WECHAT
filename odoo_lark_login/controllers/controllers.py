@@ -13,8 +13,9 @@ from werkzeug.urls import url_encode
 
 from odoo import http
 from odoo.exceptions import AccessDenied, ValidationError
-from odoo.addons.auth_oauth.controllers.main import OAuthController as Controller
-from odoo.addons.auth_oauth.controllers.main import OAuthLogin as Home
+from odoo.addons.auth_oauth.controllers.main import OAuthController as BaseController
+from odoo.addons.auth_oauth.controllers.main import OAuthLogin as BaseOAuthLogin
+
 
 _logger = logging.getLogger(__name__)
 
