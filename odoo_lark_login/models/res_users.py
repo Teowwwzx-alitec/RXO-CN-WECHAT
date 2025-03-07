@@ -17,20 +17,68 @@ class ResUsers(models.Model):
 
     openid = fields.Char(string="Openid")
 
+    def bind_to_lark(self):
+        """
+        This method is called from the user form (via a button) to initiate the Lark OAuth binding.
+        It constructs the Lark authorization URL with required parameters and returns an action
+        that redirects the user to Lark's OAuth endpoint.
+        """
+        self.ensure_one()
+        # Retrieve Lark configuration from system parameters.
+        app_id = self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appid")
+        bind_url = self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.bind_url")
+        # Get the base URL of the Odoo instance.
+        base_url = self.env["ir.config_parameter"].sudo().get_param("web.base.url")
+
+        # Build the state parameter with necessary info:
+        state = {
+            "u": self.id,  # Current user's ID.
+            "d": self.env.cr.dbname,  # Current database name.
+            "redirect_uri": base_url + "/",
+        }
+
+        # Prepare the OAuth parameters according to Lark's requirements.
+        params = {
+            "response_type": "code",
+            "app_id": app_id,
+            "redirect_uri": bind_url,
+            "scope": "lark_login",
+            # The state parameter is JSON-encoded and then base64 encoded for safe transmission.
+            "state": base64.b64encode(simplejson.dumps(state).encode("utf-8")).decode("utf-8"),
+        }
+        # Construct the final Lark OAuth URL based on Lark's auth endpoint.
+        lark_auth_endpoint = "https://open.larksuite.com/open-apis/authen/v1/index"
+        oauth_url = "%s?%s" % (lark_auth_endpoint, url_encode(params))
+        _logger.info("Redirecting to Lark OAuth URL: %s", oauth_url)
+
+        return {
+            "type": "ir.actions.act_url",
+            "target": "self",
+            "url": oauth_url,
+        }
+
+    @api.model
+    def auth_oauth(self, provider, params):
+        """
+        Override Odoo's default auth_oauth method to handle Lark-specific OAuth authentication.
+        If the provider's validation_endpoint indicates a Lark provider, it calls the Lark-specific method.
+        """
+        oauth_provider = self.env["auth.oauth.provider"].browse(int(provider))
+        if "open-apis/authen/v1/access_token" in oauth_provider.validation_endpoint:
+            return self.auth_oauth_lark(oauth_provider, params)
+        else:
+            return super(ResUsers, self).auth_oauth(provider, params)
+
     @api.model
     def auth_oauth_lark(self, provider, params):
         """
         Handles Lark OAuth:
-          1. Exchange 'code' for an 'access_token' via POST to /authen/v1/access_token.
-          2. Retrieve user info from /authen/v1/user_info using Bearer <access_token>.
-          3. Bind or find the user in Odoo by open_id.
+          1. Exchanges the authorization code for an access token.
+          2. Retrieves user info from Lark.
+          3. Finds (or binds) an Odoo user using the returned open_id.
         """
 
         def get_access_token(token_url, app_id, app_secret, code):
-            """
-            Calls Lark's /authen/v1/access_token endpoint with a JSON POST body.
-            Returns (access_token, expires_in).
-            """
             headers = {"Content-Type": "application/json"}
             payload = {
                 "grant_type": "authorization_code",
@@ -42,7 +90,6 @@ class ResUsers(models.Model):
             _logger.info("Lark token response: %s", response.text)
             token_res = response.json()
             if token_res.get("code") == 0:
-                # "data" should contain "access_token", "token_type", "expires_in"
                 data = token_res.get("data", {})
                 return data.get("access_token"), data.get("expires_in")
             else:
@@ -52,10 +99,6 @@ class ResUsers(models.Model):
                 )
 
         def get_user_info(access_token):
-            """
-            Calls Lark's /authen/v1/user_info endpoint with the Bearer token.
-            Returns a dict containing open_id, union_id, email, etc.
-            """
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {access_token}",
@@ -72,53 +115,32 @@ class ResUsers(models.Model):
                     % (user_res.get("code"), user_res.get("msg"))
                 )
 
-        # 1) Extract code from 'params' (in Odoo’s default auth_oauth flow, 'code' is in 'access_token')
         app_id = provider.client_id
         app_secret = self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appsecret")
-        code = params.get("access_token")  # We stored the code in 'access_token'
+        # In Odoo's OAuth flow, the code is passed as the 'access_token' parameter.
+        code = params.get("access_token")
         if not code:
             raise AccessDenied("飞书扫码错误：没有 code！")
 
-        # 2) Exchange code for access token
-        token_url = provider.validation_endpoint  # e.g. "https://open.larksuite.com/open-apis/authen/v1/access_token"
+        # Exchange code for access token.
+        token_url = provider.validation_endpoint  # Should be "https://open.larksuite.com/open-apis/authen/v1/access_token"
         lark_access_token, expires_in = get_access_token(token_url, app_id, app_secret, code)
 
-        # 3) Retrieve user info from Lark
+        # Retrieve user info from Lark using the access token.
         user_data = get_user_info(lark_access_token)
         open_id = user_data.get("open_id")
         if not open_id:
             raise AccessDenied("飞书返回的用户信息中没有 open_id")
 
-        # 4) Find or bind user in Odoo by open_id
-        user_id = self.sudo().search([("openid", "=", open_id)], limit=1)
-        if not user_id:
-            # Option A: raise an error if user must exist
+        # Find the user in Odoo with the matching open_id.
+        user = self.sudo().search([("openid", "=", open_id)], limit=1)
+        if not user:
             raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
 
-            # Option B (if you want to create a new user):
-            # user_id = self.sudo().create({
-            #     "login": user_data.get("email") or open_id,
-            #     "openid": open_id,
-            #     "name": user_data.get("name", "Lark User"),
-            # })
+        # Optionally update the user's OAuth access token and other info.
+        user.write({
+            "oauth_access_token": lark_access_token,
+            # You can also update other fields like name, email, etc. if returned by Lark.
+        })
 
-        # 5) Optionally store or update user info
-        user_id.oauth_access_token = lark_access_token
-        # user_id.name = user_data.get("name") or user_id.name
-        # user_id.email = user_data.get("email") or user_id.email
-        # user_id.mobile = user_data.get("mobile") or user_id.mobile
-
-        # 6) Return (db_name, user_login, token) so Odoo logs them in
-        return (self.env.cr.dbname, user_id.login, lark_access_token)
-
-    @api.model
-    def auth_oauth(self, provider, params):
-        """
-        Override Odoo's default auth_oauth method to handle Lark specifically.
-        """
-        oauth_provider = self.env["auth.oauth.provider"].browse(int(provider))
-        # If the provider's validation_endpoint is the Lark token URL, handle it
-        if "open-apis/authen/v1/access_token" in oauth_provider.validation_endpoint:
-            return self.auth_oauth_lark(oauth_provider, params)
-        else:
-            return super(ResUsers, self).auth_oauth(provider, params)
+        return (self.env.cr.dbname, user.login, lark_access_token)
