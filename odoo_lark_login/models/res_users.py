@@ -59,14 +59,20 @@ class ResUsers(models.Model):
     @api.model
     def auth_oauth_lark(self, provider, params):
         """Authenticate via Lark OAuth and bind the account."""
+
         def gettoken(url, app_id, app_secret, code):
-            url_token = "%s?app_id=%s&app_secret=%s&code=%s" % (url, app_id, app_secret, code)
             headers = {"Content-Type": "application/json"}
-            response = requests.get(url_token, headers=headers)
+            payload = {
+                "grant_type": "authorization_code",
+                "code": code,
+                "app_id": app_id,
+                "app_secret": app_secret,
+            }
+            response = requests.post(url, json=payload, headers=headers)
+            # Now parse the JSON response
             dict_data = response.json()
-            # Lark returns code==0 on success.
             if dict_data.get("code") == 0:
-                return dict_data["data"]
+                return dict_data["data"]  # Lark's token data is in "data"
             else:
                 raise AccessDenied(
                     "飞书获取access_token错误：code=%s, msg=%s"
