@@ -121,61 +121,71 @@ class OAuthController(BaseController):
             redirect_uri + "lark/bind/write?%s" % url_encode(params)
         )
 
-    # Route for processing Lark binding
     @http.route("/lark/bind/write", type="http", auth="none")
     def bind_to_lark_write(self, **kw):
         _logger.debug(">>> [DEBUG] bind_to_lark_write called with params: %s", kw)
 
-        def gettoken(code):
-            _logger.debug(">>> [DEBUG] gettoken called with code: %s", code)
-            appid = (
-                request.env["ir.config_parameter"]
-                .sudo()
-                .get_param("odoo_lark_login.appid")
-            )
-            secret = (
-                request.env["ir.config_parameter"]
-                .sudo()
-                .get_param("odoo_lark_login.appsecret")
-            )
-            # Lark access token URL per documentation
-            url_token = (
-                "https://open.larksuite.com/open-apis/authen/v1/access_token?app_id=%s&app_secret=%s&code=%s"
-                % (appid, secret, code)
-            )
-            headers = {"Content-Type": "application/json"}
-            response = requests.get(url_token, headers=headers)
-            dict_data = response.json()
-            _logger.debug(">>> [DEBUG] Lark token response: %s", dict_data)
-            if dict_data.get("code") == 0:
-                # On success, return the token data.
-                return dict_data["data"]
-            else:
-                raise AccessDenied(
-                    "Lark获取access_token错误：code=%s, msg=%s"
-                    % (dict_data.get("code"), dict_data.get("msg"))
-                )
-
-        code = kw.get("code", "")
-        state = kw.get("state", "")
-        if not code or not state:
+        code = kw.get("code")
+        raw_state = kw.get("state")
+        if not code or not raw_state:
             return BadRequest("Missing code or state parameter")
+
+        # Decode the state
         try:
-            state = simplejson.loads(state)
+            state = simplejson.loads(base64.b64decode(raw_state).decode("utf-8"))
         except Exception as e:
             _logger.error("State decoding error: %s", e)
             return BadRequest("Invalid state parameter")
 
-        # Set the session database based on state; assume state includes a user id under key "u"
+        # Switch to correct DB
         request.session.db = state.get("d")
+
         user_id = state.get("u")
         if not user_id:
             return BadRequest("Missing user information in state")
-        users = request.env["res.users"].sudo().browse(user_id)
-        if users:
-            token_data = gettoken(code)
-            # Assuming Lark returns a unique identifier under key 'open_id'
-            users.sudo().write({"openid": token_data.get("open_id")})
-            return werkzeug.utils.redirect("/web")
-        else:
+
+        # Make sure the user exists
+        users = request.env["res.users"].sudo().browse(int(user_id))
+        if not users:
             raise AccessDenied("系统中没有查到用户ID：id=%s" % user_id)
+
+        # Exchange the code for an access token using POST + JSON
+        # (If you still use GET with query params, you'll likely get an error)
+        appid = request.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appid")
+        secret = request.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appsecret")
+        token_url = "https://open.larksuite.com/open-apis/authen/v1/access_token"
+
+        headers = {"Content-Type": "application/json"}
+        payload = {
+            "grant_type": "authorization_code",
+            "code": code,
+            "app_id": appid,
+            "app_secret": secret,
+        }
+        response = requests.post(token_url, json=payload, headers=headers)
+        _logger.debug("Lark token response text: %s", response.text)
+
+        try:
+            dict_data = response.json()
+        except Exception as ex:
+            _logger.error("Failed to parse JSON: %s", ex)
+            raise AccessDenied("Lark token endpoint returned invalid JSON")
+
+        if dict_data.get("code") != 0:
+            raise AccessDenied(
+                "Lark获取access_token错误：code=%s, msg=%s"
+                % (dict_data.get("code"), dict_data.get("msg"))
+            )
+
+        # On success, 'data' should have an 'open_id'
+        token_data = dict_data.get("data", {})
+        open_id = token_data.get("open_id")
+        if not open_id:
+            raise AccessDenied("No open_id returned from Lark")
+
+        # Bind the user
+        users.sudo().write({"openid": open_id})
+        _logger.info("Successfully bound user %s to open_id %s", users.id, open_id)
+
+        return werkzeug.utils.redirect("/web")
+
