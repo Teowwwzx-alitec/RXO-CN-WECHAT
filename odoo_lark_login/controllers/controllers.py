@@ -54,7 +54,7 @@ class OAuthLogin(BaseOAuthLogin):
                     "redirect_uri": return_url,
                     "scope": provider["scope"],
                     # base64-encode state and decode to string for URL transmission
-                    "state": base64.b64encode(simplejson.dumps(state).encode("utf-8")).decode("utf-8"),
+                    "state": simplejson.dumps(state),
                 }
                 provider["auth_link"] = "%s?%s" % (
                     provider["auth_endpoint"],
@@ -72,7 +72,8 @@ class OAuthController(BaseController):
     def lark_login(self, **kw):
         _logger.debug(">>> [DEBUG] lark_login with params: %s", kw)
         try:
-            state = simplejson.loads(base64.b64decode(kw.get("state")).decode())
+            # state = simplejson.loads(base64.b64decode(kw.get("state")).decode())
+            state = simplejson.loads(kw.get("state", ""))
         except Exception as e:
             _logger.error("State decoding error: %s", e)
             return BadRequest("Invalid state parameter")
@@ -100,7 +101,8 @@ class OAuthController(BaseController):
     def bind_to_lark(self, **kw):
         _logger.debug(">>> [DEBUG] bind_to_lark with params: %s", kw)
         try:
-            state = simplejson.loads(base64.b64decode(kw.get("state")).decode())
+            # state = simplejson.loads(base64.b64decode(kw.get("state")).decode())
+            state = simplejson.loads(kw.get("state", ""))
         except Exception as e:
             _logger.error("State decoding error: %s", e)
             return BadRequest("Invalid state parameter")
@@ -132,7 +134,8 @@ class OAuthController(BaseController):
 
         # Decode the state
         try:
-            state = simplejson.loads(base64.b64decode(raw_state).decode("utf-8"))
+            # state = simplejson.loads(base64.b64decode(raw_state).decode("utf-8"))
+            state = simplejson.loads(raw_state)
         except Exception as e:
             _logger.error("State decoding error: %s", e)
             return BadRequest("Invalid state parameter")

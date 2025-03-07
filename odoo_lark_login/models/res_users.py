@@ -44,7 +44,8 @@ class ResUsers(models.Model):
             "redirect_uri": bind_url,
             "scope": "lark_login",
             # The state parameter is JSON-encoded and then base64 encoded for safe transmission.
-            "state": base64.b64encode(simplejson.dumps(state).encode("utf-8")).decode("utf-8"),
+            # "state": base64.b64encode(simplejson.dumps(state).encode("utf-8")).decode("utf-8"),
+            "state": simplejson.dumps(state),
         }
         # Construct the final Lark OAuth URL based on Lark's auth endpoint.
         lark_auth_endpoint = "https://open.larksuite.com/open-apis/authen/v1/index"
