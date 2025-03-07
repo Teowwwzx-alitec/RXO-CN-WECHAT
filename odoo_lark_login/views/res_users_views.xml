@@ -22,7 +22,7 @@
             <field name="inherit_id" ref="base.view_users_form"/>
             <field name="arch" type="xml">
                 <xpath expr="//button" position="after">
-                    <button name="bind_to_wechat" string="Bind Lark" type="object" class="btn-primary"/>
+                    <button name="bind_to_lark" string="绑定飞书" type="object" class="btn-primary"/>
                 </xpath>
             </field>
         </record>
@@ -34,7 +34,7 @@
             <field name="inherit_id" ref="base.view_users_form_simple_modif"/>
             <field name="arch" type="xml">
                 <xpath expr="//page/group[@name='preference_contact']" position="after">
-                    <button name="bind_to_wechat" string="Bind Lark" type="object" class="btn-primary"/>
+                    <button name="bind_to_lark" string="绑定飞书" type="object" class="btn-primary"/>
                 </xpath>
             </field>
         </record>
