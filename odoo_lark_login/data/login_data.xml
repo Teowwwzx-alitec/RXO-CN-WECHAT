@@ -7,7 +7,7 @@
             <field name="client_id">请替换AppID</field>
             <field name="enabled" eval="True"/>
             <field name="body">飞书登录</field>
-            <field name="css_class">fa fa-lark</field>
+            <field name="css_class">fa-solid fa-dove</field>
             <!-- Lark OAuth 入口地址；请确认该地址是否与Lark开放平台的文档一致 -->
             <field name="auth_endpoint">https://open.larksuite.com/open-apis/authen/v1/index</field>
             <!-- scope可根据实际需求调整 -->
