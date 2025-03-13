@@ -39,13 +39,13 @@ class OAuthLogin(BaseOAuthLogin):
                     "d": dbname,
                     "redirect_uri": request.httprequest.url_root,
                 }
-                APPID = request.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appid")
+                appid = request.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appid")
                 return_url = request.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.return_url")
-                _logger.debug(">>> [DEBUG] Lark AppID: %s | Return URL: %s", APPID, return_url)
+                _logger.debug(">>> [DEBUG] Lark AppID: %s | Return URL: %s", appid, return_url)
 
                 params = {
                     "response_type": "code",
-                    "app_id": APPID,
+                    "app_id": appid,
                     "redirect_uri": return_url,
                     "scope": provider["scope"],
                     "state": simplejson.dumps(state),
