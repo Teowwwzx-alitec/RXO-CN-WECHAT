@@ -22,44 +22,36 @@ _logger = logging.getLogger(__name__)
 
 class OAuthLogin(BaseOAuthLogin):
     def list_providers(self):
-        _logger.debug(">>> [DEBUG] list_providers for Lark")
+        _logger.debug(">>> [DEBUG] Entering list_providers for Lark")
         providers = super(OAuthLogin, self).list_providers()
         for provider in providers:
-            # Identify the Lark provider by its validation_endpoint (update as needed)
             if "open.larksuite.com" in provider["validation_endpoint"]:
+                _logger.debug(">>> [DEBUG] Found Lark provider: %s", provider)
                 dbname = request.session.db
+                _logger.debug(">>> [DEBUG] Current session DB: %s", dbname)
+
                 if not http.db_filter([dbname]):
+                    _logger.error(">>> [ERROR] DB Filter failed for %s", dbname)
                     return BadRequest()
-                # Store provider id, current database and redirect URL in state
+
                 state = {
                     "p": str(provider["id"]),
                     "d": dbname,
                     "redirect_uri": request.httprequest.url_root,
                 }
-                # Retrieve Lark app credentials from configuration parameters
-                APPID = (
-                    request.env["ir.config_parameter"]
-                    .sudo()
-                    .get_param("odoo_lark_login.appid")
-                )
-                return_url = (
-                    request.env["ir.config_parameter"]
-                    .sudo()
-                    .get_param("odoo_lark_login.return_url")
-                )
+                APPID = request.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appid")
+                return_url = request.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.return_url")
+                _logger.debug(">>> [DEBUG] Lark AppID: %s | Return URL: %s", APPID, return_url)
 
                 params = {
                     "response_type": "code",
                     "app_id": APPID,
                     "redirect_uri": return_url,
                     "scope": provider["scope"],
-                    # base64-encode state and decode to string for URL transmission
                     "state": simplejson.dumps(state),
                 }
-                provider["auth_link"] = "%s?%s" % (
-                    provider["auth_endpoint"],
-                    url_encode(params),
-                )
+                provider["auth_link"] = "%s?%s" % (provider["auth_endpoint"], url_encode(params))
+                _logger.debug(">>> [DEBUG] Constructed Lark auth_link: %s", provider["auth_link"])
         return providers
 
 
