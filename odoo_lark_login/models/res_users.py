@@ -8,6 +8,8 @@ import simplejson
 from werkzeug.urls import url_encode
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessDenied, ValidationError
+from odoo.exceptions import UserError
+
 
 _logger = logging.getLogger(__name__)
 
@@ -135,6 +137,10 @@ class ResUsers(models.Model):
 
         # Find the user in Odoo with the matching open_id.
         user = self.sudo().search([("openid", "=", open_id)], limit=1)
+        user.sudo().write({"openid": open_id})
+
+        _logger.info("Successfully bound user %s to open_id %s", users.id, open_id)
+        raise UserError(_("Lark account binding successful!"))
         if not user:
             raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
 
