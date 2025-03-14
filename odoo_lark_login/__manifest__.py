@@ -24,5 +24,5 @@
     "application": True,
     "price": 50,
     "currency": "USD",
-    "images": ["static/description/icon.pnG"],
+    "images": ["static/description/icon.png"],
 }
