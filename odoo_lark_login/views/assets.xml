@@ -1,0 +1,15 @@
+<odoo>
+    <!-- For the backend interface (like login, forms, etc.) -->
+    <template id="assets_backend" inherit_id="web.assets_backend" name="Load Font Awesome 6 in backend">
+        <xpath expr="." position="inside">
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css"/>
+        </xpath>
+    </template>
+
+    <!-- If you need it in frontend pages (e.g., website) -->
+    <template id="assets_frontend" inherit_id="web.assets_frontend" name="Load Font Awesome 6 in frontend">
+        <xpath expr="." position="inside">
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css"/>
+        </xpath>
+    </template>
+</odoo>
