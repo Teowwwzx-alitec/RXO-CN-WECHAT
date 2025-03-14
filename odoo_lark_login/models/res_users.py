@@ -24,10 +24,8 @@ class ResUsers(models.Model):
         that redirects the user to Lark's OAuth endpoint.
         """
         self.ensure_one()
-        # Retrieve Lark configuration from system parameters.
         app_id = self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appid")
         bind_url = self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.bind_url")
-        # Get the base URL of the Odoo instance.
         base_url = self.env["ir.config_parameter"].sudo().get_param("web.base.url")
 
         # Build the state parameter with necessary info:
@@ -50,7 +48,7 @@ class ResUsers(models.Model):
         # Construct the final Lark OAuth URL based on Lark's auth endpoint.
         lark_auth_endpoint = "https://open.larksuite.com/open-apis/authen/v1/index"
         oauth_url = "%s?%s" % (lark_auth_endpoint, url_encode(params))
-        _logger.info("Redirecting to Lark OAuth URL: %s", oauth_url)
+        # _logger.info("Redirecting to Lark OAuth URL: %s", oauth_url)
 
         return {
             "type": "ir.actions.act_url",
@@ -88,7 +86,7 @@ class ResUsers(models.Model):
                 "app_secret": app_secret,
             }
             response = requests.post(token_url, json=payload, headers=headers)
-            _logger.info("Lark token response: %s", response.text)
+            # _logger.info("Lark token response: %s", response.text)
             token_res = response.json()
             if token_res.get("code") == 0:
                 data = token_res.get("data", {})
@@ -106,7 +104,7 @@ class ResUsers(models.Model):
             }
             user_info_url = "https://open.larksuite.com/open-apis/authen/v1/user_info"
             response = requests.get(user_info_url, headers=headers)
-            _logger.info("Lark user_info response: %s", response.text)
+            # _logger.info("Lark user_info response: %s", response.text)
             user_res = response.json()
             if user_res.get("code") == 0:
                 return user_res.get("data", {})
@@ -118,8 +116,7 @@ class ResUsers(models.Model):
 
         app_id = provider.client_id
         app_secret = self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appsecret")
-        # In Odoo's OAuth flow, the code is passed as the 'access_token' parameter.
-        code = params.get("access_token")
+        code = params.get("access_token") or params.get("code")
         if not code:
             raise AccessDenied("飞书扫码错误：没有 code！")
 
@@ -144,6 +141,6 @@ class ResUsers(models.Model):
             # You can also update other fields like name, email, etc. if returned by Lark.
         })
 
-        _logger.info("Successfully bound user %s to open_id %s", user.id, open_id)
+        # _logger.info("Successfully bound user %s to open_id %s", user.id, open_id)
 
         return self.env.cr.dbname, user.login, lark_access_token

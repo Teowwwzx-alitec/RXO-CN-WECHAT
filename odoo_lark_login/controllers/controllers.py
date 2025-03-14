@@ -22,16 +22,16 @@ _logger = logging.getLogger(__name__)
 
 class OAuthLogin(BaseOAuthLogin):
     def list_providers(self):
-        _logger.debug(">>> [DEBUG] Entering list_providers for Lark")
+        # _logger.debug(">>> [DEBUG] Entering list_providers for Lark")
         providers = super(OAuthLogin, self).list_providers()
         for provider in providers:
             if "open.larksuite.com" in provider["validation_endpoint"]:
-                _logger.debug(">>> [DEBUG] Found Lark provider: %s", provider)
+                # _logger.debug(">>> [DEBUG] Found Lark provider: %s", provider)
                 dbname = request.session.db
-                _logger.debug(">>> [DEBUG] Current session DB: %s", dbname)
+                # _logger.debug(">>> [DEBUG] Current session DB: %s", dbname)
 
                 if not http.db_filter([dbname]):
-                    _logger.error(">>> [ERROR] DB Filter failed for %s", dbname)
+                    # _logger.error(">>> [ERROR] DB Filter failed for %s", dbname)
                     return BadRequest()
 
                 state = {
@@ -41,7 +41,7 @@ class OAuthLogin(BaseOAuthLogin):
                 }
                 appid = request.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appid")
                 return_url = request.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.return_url")
-                _logger.debug(">>> [DEBUG] Lark AppID: %s | Return URL: %s", appid, return_url)
+                # _logger.debug(">>> [DEBUG] Lark AppID: %s | Return URL: %s", appid, return_url)
 
                 params = {
                     "response_type": "code",
@@ -51,23 +51,19 @@ class OAuthLogin(BaseOAuthLogin):
                     "state": simplejson.dumps(state),
                 }
                 provider["auth_link"] = "%s?%s" % (provider["auth_endpoint"], url_encode(params))
-                _logger.debug(">>> [DEBUG] Constructed Lark auth_link: %s", provider["auth_link"])
+                # _logger.debug(">>> [DEBUG] Constructed Lark auth_link: %s", provider["auth_link"])
         return providers
 
 
 class OAuthController(BaseController):
-    # Lark does not require a server verification endpoint like WeChat.
-    # Thus, we omit any "/lark" GET verification route.
-
-    # Route for Lark OAuth login redirection
     @http.route("/lark/login", type="http", auth="none")
     def lark_login(self, **kw):
-        _logger.debug(">>> [DEBUG] lark_login with params: %s", kw)
+        # _logger.debug(">>> [DEBUG] lark_login with params: %s", kw)
         try:
             # state = simplejson.loads(base64.b64decode(kw.get("state")).decode())
             state = simplejson.loads(kw.get("state", ""))
         except Exception as e:
-            _logger.error("State decoding error: %s", e)
+            # _logger.error("State decoding error: %s", e)
             return BadRequest("Invalid state parameter")
         redirect_uri = state.get("redirect_uri", request.httprequest.url_root)
 
@@ -91,12 +87,12 @@ class OAuthController(BaseController):
     # Route for Lark binding redirect
     @http.route("/lark/bind", type="http", auth="none")
     def bind_to_lark(self, **kw):
-        _logger.debug(">>> [DEBUG] bind_to_lark with params: %s", kw)
+        # _logger.debug(">>> [DEBUG] bind_to_lark with params: %s", kw)
         try:
             # state = simplejson.loads(base64.b64decode(kw.get("state")).decode())
             state = simplejson.loads(kw.get("state", ""))
         except Exception as e:
-            _logger.error("State decoding error: %s", e)
+            # _logger.error("State decoding error: %s", e)
             return BadRequest("Invalid state parameter")
         redirect_uri = state.get("redirect_uri", request.httprequest.url_root)
 
@@ -117,7 +113,7 @@ class OAuthController(BaseController):
 
     @http.route("/lark/bind/write", type="http", auth="none")
     def bind_to_lark_write(self, **kw):
-        _logger.debug(">>> [DEBUG] bind_to_lark_write called with params: %s", kw)
+        # _logger.debug(">>> [DEBUG] bind_to_lark_write called with params: %s", kw)
 
         code = kw.get("code")
         raw_state = kw.get("state")
@@ -129,7 +125,7 @@ class OAuthController(BaseController):
             # state = simplejson.loads(base64.b64decode(raw_state).decode("utf-8"))
             state = simplejson.loads(raw_state)
         except Exception as e:
-            _logger.error("State decoding error: %s", e)
+            # _logger.error("State decoding error: %s", e)
             return BadRequest("Invalid state parameter")
 
         # Switch to correct DB
@@ -158,12 +154,12 @@ class OAuthController(BaseController):
             "app_secret": secret,
         }
         response = requests.post(token_url, json=payload, headers=headers)
-        _logger.debug("Lark token response text: %s", response.text)
+        # _logger.debug("Lark token response text: %s", response.text)
 
         try:
             dict_data = response.json()
         except Exception as ex:
-            _logger.error("Failed to parse JSON: %s", ex)
+            # _logger.error("Failed to parse JSON: %s", ex)
             raise AccessDenied("Lark token endpoint returned invalid JSON")
 
         if dict_data.get("code") != 0:
