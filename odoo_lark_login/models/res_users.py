@@ -141,8 +141,23 @@ class ResUsers(models.Model):
 
         # Find the user in Odoo with the matching open_id.
         user = self.sudo().search([("openid", "=", open_id)], limit=1)
+        # if not user:
+        #     raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
+        # If not found, try auto-provisioning (or matching via email if available)
         if not user:
-            raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
+            # Optionally, check for an email in user_data if provided:
+            email = user_data.get("email")
+            if email:
+                user = self.sudo().search([("login", "=", email)], limit=1)
+            if not user:
+                # Auto-create a portal user (customize as needed)
+                user = self.sudo().create({
+                    'name': user_data.get("name", "Lark User"),
+                    'login': email or f"lark_{open_id}@example.com",
+                    'openid': open_id,
+                    'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])],
+                })
+                _logger.info("Created new portal user %s with open_id %s", user.id, open_id)
 
         # Optionally update the user's OAuth access token and other info.
         user.write({
