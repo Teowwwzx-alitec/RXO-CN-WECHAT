@@ -144,6 +144,7 @@ class ResUsers(models.Model):
         # if not user:
         #     raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
         # If not found, try auto-provisioning (or matching via email if available)
+        # If not found, try auto-provisioning (or matching via email if available)
         if not user:
             # Optionally, check for an email in user_data if provided:
             email = user_data.get("email")
@@ -159,12 +160,15 @@ class ResUsers(models.Model):
                 })
                 _logger.info("Created new portal user %s with open_id %s", user.id, open_id)
 
-        # Optionally update the user's OAuth access token and other info.
+        if not user:
+            raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
+
+        # Update the user's OAuth access token and other info
         user.write({
+            "openid": open_id,  # update openid as well (if needed)
             "oauth_access_token": lark_access_token,
-            # You can also update other fields like name, email, etc. if returned by Lark.
         })
 
-        # _logger.info("Successfully bound user %s to open_id %s", user.id, open_id)
+        _logger.info("Successfully bound/updated user %s to open_id %s", user.id, open_id)
 
         return self.env.cr.dbname, user.login, lark_access_token
