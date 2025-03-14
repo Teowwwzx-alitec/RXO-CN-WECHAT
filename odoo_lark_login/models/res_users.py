@@ -130,19 +130,21 @@ class ResUsers(models.Model):
             raise AccessDenied("飞书扫码错误：没有 code！")
 
         # Exchange code for access token.
-        token_url = provider.validation_endpoint  # Should be "https://open.larksuite.com/open-apis/authen/v1/access_token"
+        token_url = provider.validation_endpoint
         lark_access_token, expires_in = get_access_token(token_url, app_id, app_secret, code)
 
-        # Retrieve user info from Lark using the access token.
         user_data = get_user_info(lark_access_token)
         open_id = user_data.get("open_id")
         if not open_id:
             raise AccessDenied("飞书返回的用户信息中没有 open_id")
 
-        # Find the user in Odoo with the matching open_id.
         user = self.sudo().search([("openid", "=", open_id)], limit=1)
         # if not user:
         #     raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
+
+        # user.write({
+        #     "oauth_access_token": lark_access_token,
+        # })
         # If not found, try auto-provisioning (or matching via email if available)
         if not user:
             # Optionally, check for an email in user_data if provided:
@@ -159,12 +161,14 @@ class ResUsers(models.Model):
                 })
                 _logger.info("Created new portal user %s with open_id %s", user.id, open_id)
 
-        # Optionally update the user's OAuth access token and other info.
-        user.write({
-            "oauth_access_token": lark_access_token,
-            # You can also update other fields like name, email, etc. if returned by Lark.
-        })
+        if not user:
+            raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
 
-        # _logger.info("Successfully bound user %s to open_id %s", user.id, open_id)
+        # Update the user's OAuth access token and other info
+        user.write({
+            "openid": open_id,  # update openid as well (if needed)
+            "oauth_access_token": lark_access_token,
+        })
+        _logger.info("Successfully bound/updated user %s to open_id %s", user.id, open_id)
 
         return self.env.cr.dbname, user.login, lark_access_token
