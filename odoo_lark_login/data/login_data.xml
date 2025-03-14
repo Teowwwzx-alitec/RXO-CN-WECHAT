@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
     <data noupdate="1">
-            <template id="lark_login_inherit_fontawesome" inherit_id="web.login_layout" name="Inject Font Awesome into Login">
-                <xpath expr="//head" position="inside">
-                    <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css"/>
-                </xpath>
-            </template>
+        <!-- Inject Font Awesome CSS into the login page -->
+        <template id="lark_login_inherit_fontawesome" inherit_id="web.login_layout" name="Inject Font Awesome into Login">
+            <xpath expr="//head" position="inside">
+                <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css"/>
+            </xpath>
+        </template>
         <!-- 飞书登录参数 -->
         <record id="lark_login" model="auth.oauth.provider">
             <field name="name">飞书扫码登录</field>
