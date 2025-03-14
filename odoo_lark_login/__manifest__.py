@@ -10,7 +10,7 @@
     "author": "soong bo",
     "license": "AGPL-3",
     "version": "17.0.0.1.0",
-    "depends": ["auth_oauth"],
+    "depends": ["auth_oauth", "web"],
     "external_dependencies": {"python": ["simplejson"]},
     "data": [
         "data/login_data.xml",
