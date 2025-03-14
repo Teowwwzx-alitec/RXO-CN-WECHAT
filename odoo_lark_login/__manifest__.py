@@ -13,7 +13,6 @@
     "depends": ["auth_oauth", "web"],
     "external_dependencies": {"python": ["simplejson"]},
     "data": [
-        "views/assets.xml",
         "data/login_data.xml",
         "views/res_users_views.xml",
         "views/res_config_settings_views.xml",
