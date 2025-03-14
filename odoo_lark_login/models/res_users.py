@@ -123,28 +123,53 @@ class ResUsers(models.Model):
                     % (user_res.get("code"), user_res.get("msg"))
                 )
 
-        app_id = provider.client_id
-        app_secret = self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appsecret")
+        def get_user_email(access_token, open_id):
+            """
+            Retrieve detailed user information (including email) from Lark's contact API.
+            Ensure that the OAuth scope includes permission to access contact information.
+            """
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {access_token}",
+            }
+            # The Lark contact endpoint with user_id_type=open_id
+            url = "https://open.larksuite.com/open-apis/contact/v3/users?user_id_type=open_id&user_id={}".format(
+                open_id)
+            response = requests.get(url, headers=headers)
+            _logger.info("Lark user email response: %s", response.text)
+            email_res = response.json()
+            if email_res.get("code") == 0:
+                data = email_res.get("data", {})
+                return data.get("email")
+            else:
+                _logger.warning("Failed to retrieve email from Lark: %s", email_res.get("msg"))
+                return None
+
         code = params.get("access_token") or params.get("code")
         if not code:
             raise AccessDenied("飞书扫码错误：没有 code！")
 
-        # Exchange code for access token.
-        token_url = provider.validation_endpoint  # Should be "https://open.larksuite.com/open-apis/authen/v1/access_token"
+        app_id = provider.client_id
+        app_secret = self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appsecret")
+        token_url = provider.validation_endpoint
         lark_access_token, expires_in = get_access_token(token_url, app_id, app_secret, code)
 
-        # Retrieve user info from Lark using the access token.
         user_data = get_user_info(lark_access_token)
         open_id = user_data.get("open_id")
         if not open_id:
             raise AccessDenied("飞书返回的用户信息中没有 open_id")
 
-        # Find the user in Odoo with the matching open_id.
+        email = user_data.get("email")
+        if not email:
+            email = get_user_email(lark_access_token, open_id)
+
+        if not email:
+            raise AccessDenied("无法从飞书获取用户的邮箱信息")
+
         user = self.sudo().search([("openid", "=", open_id)], limit=1)
         # if not user:
         #     raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
-        # If not found, try auto-provisioning (or matching via email if available)
-        # If not found, try auto-provisioning (or matching via email if available)
+
         if not user:
             # Optionally, check for an email in user_data if provided:
             email = user_data.get("email")
@@ -154,7 +179,7 @@ class ResUsers(models.Model):
                 # Auto-create a portal user (customize as needed)
                 user = self.sudo().create({
                     'name': user_data.get("name", "Lark User"),
-                    'login': email or f"lark_{open_id}@example.com",
+                    'login': email or f"lark_{open_id}@alitec.com",
                     'openid': open_id,
                     'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])],
                 })
