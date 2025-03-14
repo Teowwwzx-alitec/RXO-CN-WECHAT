@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="lark_bind_success" name="Lark Bind Success">
+        <t t-call="web.layout">
+            <div class="container mt16">
+                <div class="alert alert-success">
+                    <h3>Lark Account Bound Successfully!</h3>
+                    <p>Your account has been linked with Lark. (open_id: <t t-esc="open_id"/>)</p>
+                </div>
+                <a class="btn btn-primary" href="/web">Go to Dashboard</a>
+            </div>
+        </t>
+    </template>
+</odoo>
