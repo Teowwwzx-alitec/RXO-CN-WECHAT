@@ -136,8 +136,8 @@ class OAuthController(BaseController):
             return BadRequest("Missing user information in state")
 
         # Make sure the user exists
-        users = request.env["res.users"].sudo().browse(int(user_id))
-        if not users:
+        user = request.env["res.users"].sudo().browse(int(user_id))
+        if not user:
             raise AccessDenied("系统中没有查到用户ID：id=%s" % user_id)
 
         # Exchange the code for an access token using POST + JSON
@@ -175,8 +175,24 @@ class OAuthController(BaseController):
             raise AccessDenied("No open_id returned from Lark")
 
         # Bind the user
-        users.sudo().write({"openid": open_id})
-        _logger.info("Successfully bound user %s to open_id %s", users.id, open_id)
+        # user.sudo().write({"openid": open_id})
+        # _logger.info("Successfully bound user %s to open_id %s", user.id, open_id)
+        #
+        # return werkzeug.utils.redirect("/web")
+        # Bind the user by writing the openid into the user record
+        user.sudo().write({"openid": open_id})
+        _logger.info("Successfully bound user %s to open_id %s", user.id, open_id)
 
-        return werkzeug.utils.redirect("/web")
+        # Verify that the openid is indeed recorded in the database
+        updated_user = request.env["res.users"].sudo().browse(user.id)
+        if updated_user.openid != open_id:
+            _logger.error("Failed to record openid for user %s", user.id)
+            return request.render('odoo_lark_login.lark_bind_failure', {
+                'message': 'Failed to record Lark open_id.'
+            })
+
+        # Render a success page indicating binding was successful
+        return request.render('odoo_lark_login.lark_bind_success', {
+            'open_id': open_id
+        })
 
