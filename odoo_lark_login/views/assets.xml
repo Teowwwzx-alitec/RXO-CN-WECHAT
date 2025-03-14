@@ -1,8 +1,11 @@
-<?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <template id="assets_backend_inherit_fontawesome" inherit_id="web.assets_backend" name="Load Font Awesome 6 in backend">
-        <xpath expr="." position="inside">
-            <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css"/>
-        </xpath>
-    </template>
+    <record id="assets_backend_inherit_fontawesome" model="ir.ui.view">
+        <field name="name">Assets Backend Inherit Font Awesome</field>
+        <field name="inherit_id" ref="web.assets_backend"/>
+        <field name="arch" type="xml">
+            <xpath expr="." position="inside">
+                <link rel="stylesheet" type="text/css" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.2.0/css/all.min.css"/>
+            </xpath>
+        </field>
+    </record>
 </odoo>
