@@ -22,7 +22,6 @@ _logger = logging.getLogger(__name__)
 
 class OAuthLogin(BaseOAuthLogin):
     def list_providers(self):
-        # _logger.debug(">>> [DEBUG] Entering list_providers for Lark")
         providers = super(OAuthLogin, self).list_providers()
         for provider in providers:
             if "open.larksuite.com" in provider["validation_endpoint"]:

@@ -35,6 +35,7 @@
             <field name="arch" type="xml">
                 <xpath expr="//page/group[@name='preference_contact']" position="after">
                     <button name="bind_to_lark" string="定飞书" type="object" class="btn-primary"/>
+                    <button name="unbind_from_lark" string="Unbind Lark" type="object" class="btn-secondary"/>
                 </xpath>
             </field>
         </record>

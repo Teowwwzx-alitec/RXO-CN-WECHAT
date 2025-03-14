@@ -16,6 +16,15 @@ class ResUsers(models.Model):
     _inherit = "res.users"
 
     openid = fields.Char(string="Openid")
+    def unbind_from_lark(self):
+        """Remove the Lark binding from the user."""
+        self.ensure_one()
+        self.write({'openid': False})
+        _logger.info("User %s unbound from Lark", self.id)
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'reload',
+        }
 
     def bind_to_lark(self):
         """
