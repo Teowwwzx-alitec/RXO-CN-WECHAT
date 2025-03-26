@@ -10,7 +10,7 @@
                 <data>
                     <field name="login_date" position="after">
                         <field name="openid" />
-<!--                        <field name="wechat_nickname"/>-->
+                        <field name="wechat_nickname"/>
                     </field>
                 </data>
             </field>
