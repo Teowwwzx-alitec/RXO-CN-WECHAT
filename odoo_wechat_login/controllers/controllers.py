@@ -57,7 +57,7 @@ class WechatAuthController(http.Controller):
         # Step 2: 真实用户授权流程（携带code）
         code = kwargs.get('code')
         if not code:
-            return self._error_response("请从微信公众号菜单访问本页面")
+            return "❌ 授权码缺失，请通过微信菜单访问"
 
         # 调试模式下跳过微信API调用（直接模拟用户数据）
         if DEBUG_MODE and code == "TEST_CODE":
@@ -129,13 +129,25 @@ class FormSubmissionController(http.Controller):
     @http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
     def handle_form_submission(self, **post_data):
         """ 处理表单提交（匹配Website Builder字段名） """
-        # 参数名称需与表单字段一致
-        openid = post_data.get('wechat_openid')
-        name = post_data.get('name')
-        phone = post_data.get('phone')
+        _logger.info(f"Form submission started. Data: {post_data}")
 
-        if not (name and phone and openid):
-            return "❌ 所有字段均为必填项"
+        # 确保openid存在
+        openid = post_data.get('wechat_openid')
+        if not openid:
+            return "请通过微信授权进入本页面"
+
+        # # 参数名称需与表单字段一致
+        # openid = post_data.get('wechat_openid')
+        # name = post_data.get('name')
+        # phone = post_data.get('phone')
+        # 其他字段校验示例
+        name = post_data.get('name', '').strip()
+        phone = post_data.get('phone', '').strip()
+        if not name or not phone:
+            return "❌ 姓名和手机号为必填项"
+
+        # if not (name and phone and openid):
+        #     return "❌ 所有字段均为必填项"
 
         try:
             user = http.request.env['res.users'].sudo().create({
