@@ -118,22 +118,22 @@ class WechatAuthController(http.Controller):
     @http.route('/forms', type='http', auth='public', website=True)
     def display_form(self, **kwargs):
         """ 直接渲染自定义页面（非重定向） """
-        user_data = http.request.session.get('wechat_user', {})
-        return http.request.render(
-            'odoo_wechat_login.wechat_form_page',
-            {'user': user_data}
-        )
+
+        return http.request.redirect('/forms')  # 直接跳转Builder生成的路径
 
 class FormSubmissionController(http.Controller):
 
     @http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
     def handle_form_submission(self, **post_data):
-        # 获取字段名称统一为 'wechat_openid'
+        """ 处理表单提交（匹配Website Builder字段名） """
+        # 参数名称需与表单字段一致
         openid = post_data.get('wechat_openid')
         name = post_data.get('name')
         phone = post_data.get('phone')
 
-        # 创建用户逻辑
+        if not (name and phone and openid):
+            return "❌ 所有字段均为必填项"
+
         try:
             user = http.request.env['res.users'].sudo().create({
                 'name': name,
@@ -141,9 +141,10 @@ class FormSubmissionController(http.Controller):
                 'phone': phone,
                 'openid': openid
             })
-            return "✅ 注册成功！用户ID: %s" % user.id
+            return f"✅ 注册成功！用户ID: {user.id}"
         except Exception as e:
-            return f"❌ 错误: {str(e)}"
+            return f"❌ 数据库错误: {str(e)}"
+
 
 
 # class OAuthLogin(Home):
