@@ -121,7 +121,7 @@ class WechatAuthController(http.Controller):
         user_data = http.request.session.get('wechat_user', {})
         if not user_data:
             return "❌ 请通过微信公众号菜单访问本页面"
-        return http.request.render('website.forms')  # 使用实际存在的页面XML ID
+        return http.request.render('website.alitec-forms')  # 使用实际存在的页面XML ID
 
 
 class FormSubmissionController(http.Controller):
