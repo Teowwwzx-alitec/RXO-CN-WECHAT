@@ -105,9 +105,8 @@ class WechatAuthController(http.Controller):
             return self._error_response("服务器出现错误，请联系管理员")
 
     def _redirect_to_form(self, token, lang):
-        """ 跳转到表单页 """
-        base_url = f"/forms?token={token}&lang={lang}"
-        return http.request.redirect(base_url)
+        # 直接跳转到Website Builder创建的页面，不带参数
+        return http.request.redirect('/forms')
 
     def _error_response(self, message):
         """ 统一错误页面响应 """
@@ -117,9 +116,11 @@ class WechatAuthController(http.Controller):
 
     @http.route('/forms', type='http', auth='public', website=True)
     def display_form(self, **kwargs):
-        """ 直接渲染自定义页面（非重定向） """
-
-        return http.request.redirect('/forms')  # 直接跳转Builder生成的路径
+        # 如果已经加载过页面，直接渲染
+        if http.request.session.get('form_loaded'):
+            return http.request.render('website.page_forms')
+        http.request.session['form_loaded'] = True
+        return http.request.redirect('/forms')# 直接跳转Builder生成的路径
 
 class FormSubmissionController(http.Controller):
 
