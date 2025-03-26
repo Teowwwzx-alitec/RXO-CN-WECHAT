@@ -106,21 +106,23 @@ class WechatAuthController(http.Controller):
 
     def _redirect_to_form(self, token, lang):
         # 直接跳转到Website Builder创建的页面，不带参数
-        return http.request.redirect('/forms')
+        openid = http.request.session.get('wechat_user', {}).get('openid')
+        return http.request.redirect(f"/forms?openid={openid}")
 
     def _error_response(self, message):
         """ 统一错误页面响应 """
-        return http.request.render('wechat_login.error_template', {
-            'error_message': message
-        })
+        return message
 
+
+    # controller.py
     @http.route('/forms', type='http', auth='public', website=True)
     def display_form(self, **kwargs):
-        # 如果已经加载过页面，直接渲染
-        if http.request.session.get('form_loaded'):
-            return http.request.render('website.page_forms')
-        http.request.session['form_loaded'] = True
-        return http.request.redirect('/forms')# 直接跳转Builder生成的路径
+        """ 直接渲染Website Builder创建的页面 """
+        user_data = http.request.session.get('wechat_user', {})
+        if not user_data:
+            return "❌ 请通过微信公众号菜单访问本页面"
+        return http.request.render('website.forms')  # 使用实际存在的页面XML ID
+
 
 class FormSubmissionController(http.Controller):
 
