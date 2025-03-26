@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <!-- templates_views.xml -->
+    <template id="wechat_form_page" name="WeChat Registration Form" page="True" key="odoo_wechat_login.wechat_form_page">
+        <t t-call="website.layout">
+            <div class="container mt-5">
+                <!-- 显示微信用户信息 -->
+                <div t-if="user" class="alert alert-info">
+                    当前微信用户：<span t-esc="user.get('nickname')"/>
+                </div>
+
+                <!-- 自定义表单内容 -->
+                <form action="/forms/submit" method="post">
+                    <!-- 隐藏字段传递OpenID -->
+                    <input type="hidden" name="openid" t-att-value="user.get('openid')"/>
+
+                    <div class="form-group">
+                        <label>姓名</label>
+                        <input type="text" name="name" class="form-control"/>
+                    </div>
+                    <div class="form-group">
+                        <label>手机号</label>
+                        <input type="tel" name="phone" class="form-control"/>
+                    </div>
+                    <button type="submit" class="btn btn-primary">提交</button>
+                </form>
+            </div>
+        </t>
+    </template>
+</odoo>

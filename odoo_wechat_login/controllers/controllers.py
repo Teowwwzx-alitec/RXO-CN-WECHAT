@@ -115,36 +115,36 @@ class WechatAuthController(http.Controller):
             'error_message': message
         })
 
-    # 修改后的display_form方法
     @http.route('/forms', type='http', auth='public', website=True)
     def display_form(self, **kwargs):
+        """ 直接渲染自定义页面（非重定向） """
         user_data = http.request.session.get('wechat_user', {})
-
-        # 记录用户数据到日志
-        _logger.info("✅ 用户数据获取成功: %s", user_data)
-
-        return http.request.render('website.page_forms', {  # ✅ 直接渲染网站页面
-            'user': user_data,
-            'token': kwargs.get('token'),
-            'lang': kwargs.get('lang', 'zh_CN')
-        })
+        return http.request.render(
+            'odoo_wechat_login.wechat_form_page',
+            {'user': user_data}
+        )
 
 class FormSubmissionController(http.Controller):
 
     @http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
     def handle_form_submission(self, **post_data):
-        # 获取表单数据
+        # 获取字段名称统一为 'wechat_openid'
         openid = post_data.get('wechat_openid')
         name = post_data.get('name')
         phone = post_data.get('phone')
-        # nickname = post_data.get('wechat_nickname')
 
-        user = request.env['res.users'].sudo().create({
-            'name': name,
-            'login': phone,
-            'phone': phone,
-            'openid': openid
-        })
+        # 创建用户逻辑
+        try:
+            user = http.request.env['res.users'].sudo().create({
+                'name': name,
+                'login': phone,
+                'phone': phone,
+                'openid': openid
+            })
+            return "✅ 注册成功！用户ID: %s" % user.id
+        except Exception as e:
+            return f"❌ 错误: {str(e)}"
+
 
 # class OAuthLogin(Home):
 #     print(">>> [DEBUG] OAuthLogin", flush=True)
