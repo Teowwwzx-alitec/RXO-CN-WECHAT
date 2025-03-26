@@ -136,7 +136,7 @@ class FormSubmissionController(http.Controller):
         name = post_data.get('name')
         phone = post_data.get('phone')
         openid = post_data.get('wechat_openid')
-        nickname = post_data.get('wechat_nickname')
+        # nickname = post_data.get('wechat_nickname')
 
         # 创建Odoo用户
         try:
@@ -145,7 +145,7 @@ class FormSubmissionController(http.Controller):
                 'login': phone,  # 使用手机号作为登录名
                 'phone': phone,
                 'openid': openid,  # 需要自定义字段存储OpenID
-                'wechat_nickname': nickname,
+                # 'wechat_nickname': nickname,
             })
             return "✅ 注册成功！用户ID: %s" % user.id
         except UserError as e:
