@@ -4,6 +4,7 @@ import base64
 import logging
 from odoo.http import request
 import hashlib
+import json
 
 import simplejson
 import requests
@@ -114,14 +115,20 @@ class WechatAuthController(http.Controller):
             'error_message': message
         })
 
+    # 修改后的display_form方法
     @http.route('/forms', type='http', auth='public', website=True)
     def display_form(self, **kwargs):
-        """ 展示表单页 """
         user_data = http.request.session.get('wechat_user', {})
-        return http.request.render('wechat_login.form_template', {
-            'user': user_data,
-            'token': kwargs.get('token'),
-            'lang': kwargs.get('lang', 'zh_CN')
+
+        # 记录用户数据到日志
+        _logger.info("✅ 用户数据获取成功: %s", user_data)
+
+        # 直接返回JSON响应（测试用）
+        return json.dumps({
+            "status": "success",
+            "user": user_data,
+            "token": kwargs.get('token'),
+            "lang": kwargs.get('lang', 'zh_CN')
         })
 
 # class OAuthLogin(Home):
