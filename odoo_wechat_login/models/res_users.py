@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-
+from werkzeug.exceptions import BadRequest
 import logging
 
 import requests
@@ -16,7 +16,7 @@ class ResUsers(models.Model):
     _inherit = "res.users"
 
     openid = fields.Char(string="Openid")
-    # wechat_nickname = fields.Char(string='微信昵称')
+    wechat_nickname = fields.Char(string='微信昵称')
 
     # def bind_to_wechat(self):
     #     self.ensure_one()
