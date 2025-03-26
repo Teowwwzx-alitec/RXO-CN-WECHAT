@@ -123,13 +123,33 @@ class WechatAuthController(http.Controller):
         # 记录用户数据到日志
         _logger.info("✅ 用户数据获取成功: %s", user_data)
 
-        # 直接返回JSON响应（测试用）
-        return json.dumps({
-            "status": "success",
-            "user": user_data,
-            "token": kwargs.get('token'),
-            "lang": kwargs.get('lang', 'zh_CN')
-        })
+        # 跳转到Odoo表单页，携带微信参数
+        return http.request.redirect(
+            f"/forms?openid={user_data['openid']}&nickname={user_data['nickname']}&token=xxx&lang=zh_CN"
+        )
+
+class FormSubmissionController(http.Controller):
+
+    @http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
+    def handle_form_submission(self, **post_data):
+        # 获取表单数据
+        name = post_data.get('name')
+        phone = post_data.get('phone')
+        openid = post_data.get('wechat_openid')
+        nickname = post_data.get('wechat_nickname')
+
+        # 创建Odoo用户
+        try:
+            user = http.request.env['res.users'].sudo().create({
+                'name': name,
+                'login': phone,  # 使用手机号作为登录名
+                'phone': phone,
+                'openid': openid,  # 需要自定义字段存储OpenID
+                'wechat_nickname': nickname,
+            })
+            return "✅ 注册成功！用户ID: %s" % user.id
+        except UserError as e:
+            return f"❌ 错误: {str(e)}"
 
 # class OAuthLogin(Home):
 #     print(">>> [DEBUG] OAuthLogin", flush=True)
