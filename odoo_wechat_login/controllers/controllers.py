@@ -110,7 +110,7 @@ class WechatAuthController(http.Controller):
 
     def _error_response(self, message):
         """ 统一错误页面响应 """
-        return http.request.render('your_module.error_template', {
+        return http.request.render('wechat_login.error_template', {
             'error_message': message
         })
 
@@ -118,7 +118,7 @@ class WechatAuthController(http.Controller):
     def display_form(self, **kwargs):
         """ 展示表单页 """
         user_data = http.request.session.get('wechat_user', {})
-        return http.request.render('your_module.form_template', {
+        return http.request.render('wechat_login.form_template', {
             'user': user_data,
             'token': kwargs.get('token'),
             'lang': kwargs.get('lang', 'zh_CN')
