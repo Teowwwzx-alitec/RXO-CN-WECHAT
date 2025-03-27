@@ -16,3 +16,4 @@ class WechatUserProfile(models.Model):
     headimgurl = fields.Char('头像URL')
     privilege = fields.Text('特权信息')
     raw_data = fields.Text('原始数据')
+    wish = fields.Text('许愿', help="用户在表单中填写的许愿内容")

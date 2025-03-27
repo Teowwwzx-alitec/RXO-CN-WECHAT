@@ -1,19 +1,65 @@
 <!-- views/user_profile_views.xml -->
 <odoo>
+    <record id="view_wechat_profile_tree" model="ir.ui.view">
+        <field name="name">wechat.user.profile.tree</field>
+        <field name="model">wechat.user.profile</field>
+        <field name="arch" type="xml">
+            <field name="user_id"/>
+            <field name="nickname"/>
+            <field name="sex"/>
+            <field name="city"/>
+            <field name="province"/>
+            <field name="headimgurl" widget="url"/>
+            <field name="privilege" widget="textarea"/>
+            <field name="raw_data" widget="textarea" readonly="1"/>
+            <field name="wish"/>
+        </field>
+    </record>
+
     <record id="view_wechat_profile_form" model="ir.ui.view">
         <field name="name">wechat.user.profile.form</field>
         <field name="model">wechat.user.profile</field>
         <field name="arch" type="xml">
-            <form>
-                <field name="user_id"/>
-                <field name="nickname"/>
-                <field name="sex"/>
-                <field name="city"/>
-                <field name="province"/>
-                <field name="headimgurl" widget="url"/>
-                <field name="privilege" widget="textarea"/>
-                <field name="raw_data" widget="textarea" readonly="1"/>
+            <form string="微信用户档案">
+                <sheet>
+                    <group>
+                        <field name="user_id"/>
+                        <field name="nickname"/>
+                        <field name="sex"/>
+                    </group>
+                    <group>
+                        <field name="city"/>
+                        <field name="province"/>
+                    </group>
+                    <group>
+                        <field name="headimgurl" widget="url"/>
+                    </group>
+                    <group>
+                        <field name="privilege" widget="textarea"/>
+                        <field name="raw_data" widget="textarea" readonly="1"/>
+                    </group>
+                    <group>
+                        <field name="wish"/>
+                    </group>
+                </sheet>
             </form>
         </field>
     </record>
+
+        <!-- Action to Open the WeChat User Profile Model -->
+    <record id="action_wechat_profile" model="ir.actions.act_window">
+        <field name="name">微信用户档案</field>
+        <field name="res_model">wechat.user.profile</field>
+        <field name="view_mode">tree,form</field>
+        <field name="help" type="html">
+            <p class="oe_view_nocontent_create">
+                创建一个微信用户档案以查看详细信息.
+            </p>
+        </field>
+    </record>
+
+    <menuitem id="menu_wechat_root" name="微信管理" sequence="10"/>
+    <!-- Menu Item for WeChat User Profile -->
+    <menuitem id="menu_wechat_profile" name="微信用户档案" parent="menu_wechat_root" action="action_wechat_profile" sequence="1"/>
+
 </odoo>

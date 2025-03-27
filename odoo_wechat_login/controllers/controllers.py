@@ -200,6 +200,7 @@ def handle_form_submission(self, **post_data):
         phone = post_data.get('phone', '').strip()
         name = post_data.get('name', '测试用户').strip()
         email = post_data.get('email', '').strip()
+        wish = post_data.get('wish', '').strip()
 
         # 验证必填字段
         if not phone or len(phone) < 8:
@@ -214,6 +215,7 @@ def handle_form_submission(self, **post_data):
         existing_profile = request.env['wechat.user.profile'].sudo().search([
             ('headimgurl', '=', wechat_user.get('headimgurl', ''))
         ], limit=1)
+
         if existing_profile:
             _logger.info("微信用户已存在，直接使用现有记录")
             user = existing_profile.user_id
@@ -239,6 +241,7 @@ def handle_form_submission(self, **post_data):
                 'headimgurl': wechat_user.get('headimgurl', ''),
                 'privilege': simplejson.dumps(wechat_user.get('privilege', [])),
                 'raw_data': simplejson.dumps(wechat_user),
+                'wish': wish,
             }
             request.env['wechat.user.profile'].sudo().create(profile_vals)
             _logger.info("微信用户档案已创建")
