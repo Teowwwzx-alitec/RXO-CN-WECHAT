@@ -2,25 +2,32 @@
 
 import base64
 import logging
-from odoo.http import request
 import hashlib
 import json
-
 import simplejson
 import requests
 import werkzeug.utils
-from werkzeug.exceptions import BadRequest
-from werkzeug.urls import url_encode
-
 from odoo import http
+from odoo.http import request
+from werkzeug.urls import url_encode
+from werkzeug.exceptions import BadRequest
+
 from odoo.exceptions import AccessDenied, ValidationError
-from odoo.addons.auth_oauth.controllers.main import OAuthController as Controller
 from odoo.addons.auth_oauth.controllers.main import OAuthLogin as Home
+from odoo.addons.auth_oauth.controllers.main import OAuthController as Controller
 
 _logger = logging.getLogger(__name__)
 
 
 class WechatAuthController(http.Controller):
+    def _get_wechat_config(self):
+        """ 统一获取微信配置 """
+        config = http.request.env['ir.config_parameter'].sudo()
+        return {
+            'appid': config.get_param('odoo_wechat_login.appid'),
+            'secret': config.get_param('odoo_wechat_login.appsecret'),
+            'token': config.get_param('odoo_wechat_login.token')
+        }
 
     # 微信Token验证专用接口（用于公众号后台验证）
     @http.route('/wechat-verify', type='http', auth='public', methods=['GET'], csrf=False)
@@ -43,124 +50,172 @@ class WechatAuthController(http.Controller):
             return "Verification Failed"
 
     # 核心逻辑：处理微信授权回调
-    @http.route('/form', type='http', auth='public', website=True, csrf=False)
-    def handle_wechat_auth(self, **kwargs):
-        # 注：此接口同时处理微信Token验证和用户授权回调
-        # ----------------------------------------------------
-        # 调试模式开关（正式环境设为False）
-        DEBUG_MODE = True  # 本地测试时可临时开启
-
-        # Step 1: 检查是否是微信服务器验证请求
-        if 'echostr' in kwargs:
-            return self.verify_wechat_token(**kwargs)
-
-        # Step 2: 真实用户授权流程（携带code）
-        code = kwargs.get('code')
-        if not code:
-            return "❌ 授权码缺失，请通过微信菜单访问"
-
-        # 调试模式下跳过微信API调用（直接模拟用户数据）
-        if DEBUG_MODE and code == "TEST_CODE":
-            debug_user_data = {
-                "openid": "test_openid_123",
-                "nickname": "测试用户",
-                "headimgurl": "https://example.com/avatar.jpg"
-            }
-            http.request.session['wechat_user'] = debug_user_data
-            return self._redirect_to_form(kwargs.get('token'), kwargs.get('lang'))
-
-        # 正式逻辑：调用微信API获取用户信息
+    @http.route('/form', type='http', auth='public', website=True)
+    def handle_wechat_auth(self, code=None, state=None, **kwargs):
+        """ 处理微信授权回调 """
         try:
-            # 参数配置
-            APPID = 'wx295ee81aa896f0a7'
-            SECRET = '0790aca54793c477c4e13c50b3ac6dcc'
+            _logger.info("=== 微信授权回调开始 ===")
+            _logger.info(f"接收参数 - code: {code}, state: {state}")
 
-            # 获取access_token
-            token_url = f"https://api.weixin.qq.com/sns/oauth2/access_token?appid={APPID}&secret={SECRET}&code={code}&grant_type=authorization_code"
+            if not code:
+                _logger.error("缺少code参数")
+                return self._error_response("授权失败：缺少必要参数")
+
+
+            # 获取微信配置
+            config = self._get_wechat_config()
+            if not all([config['appid'], config['secret']]):
+                _logger.error("微信配置不完整")
+                return self._error_response("系统配置错误")
+
+            # 1. 获取access_token
+            token_url = (
+                f"https://api.weixin.qq.com/sns/oauth2/access_token?"
+                f"appid={config['appid']}&"
+                f"secret={config['secret']}&"
+                f"code={code}&"
+                f"grant_type=authorization_code"
+            )
+
+            _logger.info(f"请求Token URL: {token_url.split('secret=')[0]}...")  # 安全日志
             token_resp = requests.get(token_url, timeout=10)
             token_data = token_resp.json()
-            if 'errcode' in token_data:
-                _logger.error(f"🚨 获取Token失败: {token_data}")
-                return self._error_response("微信授权失败（错误代码：%s）" % token_data.get('errcode'))
+            _logger.info(f"Token响应: { {k: v for k, v in token_data.items() if k != 'access_token'} }")  # 隐藏敏感信息
 
-            # 获取用户信息
-            user_info_url = f"https://api.weixin.qq.com/sns/userinfo?access_token={token_data['access_token']}&openid={token_data['openid']}&lang=zh_CN"
+            if 'errcode' in token_data:
+                _logger.error(f"获取Token失败: {token_data}")
+                return self._error_response(f"微信授权失败（错误代码：{token_data.get('errcode')}）")
+
+            # 2. 获取用户信息
+            user_info_url = (
+                f"https://api.weixin.qq.com/sns/userinfo?"
+                f"access_token={token_data['access_token']}&"
+                f"openid={token_data['openid']}&"
+                f"lang=zh_CN"
+            )
+
+            _logger.info(f"请求用户信息URL: {user_info_url.split('access_token=')[0]}...")
             user_resp = requests.get(user_info_url, timeout=5)
             user_data = user_resp.json()
+            _logger.info(f"用户信息原始响应: { {k: v for k, v in user_data.items() if k != 'headimgurl'} }")
+
             if 'errcode' in user_data:
+                _logger.error(f"获取用户信息失败: {user_data}")
                 return self._error_response("无法获取用户信息")
 
-            # 存储用户数据到session
-            http.request.session['wechat_user'] = {
+            # 3. 处理用户数据
+            wechat_user = {
                 'openid': user_data.get('openid'),
-                'nickname': user_data.get('nickname'),
-                'avatar': user_data.get('headimgurl')
+                'unionid': user_data.get('unionid', ''),
+                'nickname': user_data.get('nickname', ''),
+                'sex': user_data.get('sex', 0),
+                'province': user_data.get('province', ''),
+                'city': user_data.get('city', ''),
+                'country': user_data.get('country', ''),
+                'headimgurl': user_data.get('headimgurl', ''),
+                'privilege': user_data.get('privilege', [])
             }
 
-            # 跳转到目标页面
-            return self._redirect_to_form(kwargs.get('token'), kwargs.get('lang', 'zh_CN'))
+            # 安全日志（不显示敏感信息）
+            _logger.info("=== 用户数据摘要 ===")
+            _logger.info(f"OpenID: {wechat_user['openid'][:6]}...")
+            _logger.info(f"UnionID: {wechat_user['unionid'][:6] if wechat_user['unionid'] else '无'}")
+            _logger.info(f"昵称: {wechat_user['nickname']}")
+            _logger.info(f"性别: {['未知', '男', '女'][wechat_user['sex']]}")
+            _logger.info(f"地区: {wechat_user['country']}-{wechat_user['province']}-{wechat_user['city']}")
 
+            # 存储到session
+            http.request.session['wechat_user'] = wechat_user
+            _logger.info("用户数据已存入session")
+
+            return self._redirect_to_form()
+
+
+        except requests.Timeout:
+            _logger.error("微信API请求超时")
+            return self._error_response("微信服务器响应超时，请稍后重试")
         except Exception as e:
-            _logger.error(f"⚠️ 系统异常: {str(e)}")
-            return self._error_response("服务器出现错误，请联系管理员")
+            _logger.exception("微信授权处理异常")
+            return self._error_response(f"系统错误: {str(e)}")
 
-    def _redirect_to_form(self, token, lang):
-        # 直接跳转到Website Builder创建的页面，不带参数
-        openid = http.request.session.get('wechat_user', {}).get('openid')
-        return http.request.redirect(f"/forms?openid={openid}")
+    def _redirect_to_form(self):
+        """ 跳转到表单页 """
+        if not http.request.session.get('wechat_user'):
+            return self._error_response("会话信息丢失")
+        return http.request.redirect("/forms")
 
     def _error_response(self, message):
-        """ 统一错误页面响应 """
-        return message
+        """ 统一错误响应 """
+        _logger.error(f"错误响应: {message}")
+        return http.request.render('wechat_login.error_template', {
+            'error_message': message
+        })
 
+    # @http.route('/forms', type='http', auth='public', website=True)
+    # def display_form(self, **kwargs):
+    #     """ 直接渲染Website Builder创建的页面 """
+    #     user_data = http.request.session.get('wechat_user', {})
+    #     if not user_data:
+    #         return "❌ 请通过微信公众号菜单访问本页面"
+    #     return http.request.render('website.alitec-forms')  # 使用实际存在的页面XML ID
 
-    # controller.py
     @http.route('/forms', type='http', auth='public', website=True)
     def display_form(self, **kwargs):
-        """ 直接渲染Website Builder创建的页面 """
-        user_data = http.request.session.get('wechat_user', {})
-        if not user_data:
-            return "❌ 请通过微信公众号菜单访问本页面"
-        return http.request.render('website.alitec-forms')  # 使用实际存在的页面XML ID
+        """
+        核心功能：
+        1. 验证微信授权状态
+        2. 传递用户数据到模板
+        3. 渲染Website Builder创建的页面
+        """
+        wechat_user = http.request.session.get('wechat_user')
+
+        if not wechat_user:
+            _logger.warning("未授权访问尝试，来源IP: %s", http.request.httprequest.remote_addr)
+            return self._error_response("请通过微信公众号菜单访问本页面")
+
+        _logger.info("渲染表单页，OpenID: %s", wechat_user.get('openid', '未知'))
+
+        try:
+            # 确保使用正确的模板XML ID
+            return http.request.render('website.alitec-forms', {
+                'wechat_user': wechat_user,
+                'hide_header_footer': True  # 可选：隐藏页头页尾
+            })
+        except ValueError as e:
+            _logger.error("模板渲染失败: %s", str(e))
+            return self._error_response("页面加载失败，请联系管理员")
 
 
 class FormSubmissionController(http.Controller):
-
     @http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
     def handle_form_submission(self, **post_data):
         """ 处理表单提交（匹配Website Builder字段名） """
-        _logger.info(f"Form submission started. Data: {post_data}")
+        _logger.info("表单提交开始，数据: %s", {k: v for k, v in post_data.items() if 'password' not in k.lower()})
 
-        # 确保openid存在
-        openid = post_data.get('wechat_openid')
-        if not openid:
-            return "请通过微信授权进入本页面"
-
-        # # 参数名称需与表单字段一致
-        # openid = post_data.get('wechat_openid')
-        # name = post_data.get('name')
-        # phone = post_data.get('phone')
-        # 其他字段校验示例
-        name = post_data.get('name', '').strip()
-        phone = post_data.get('phone', '').strip()
-        if not name or not phone:
-            return "❌ 姓名和手机号为必填项"
-
-        # if not (name and phone and openid):
-        #     return "❌ 所有字段均为必填项"
+        # 获取会话中的微信用户
+        wechat_user = http.request.session.get('wechat_user', {})
+        if not wechat_user:
+            return self._error_response("请通过微信授权访问")
 
         try:
+            # 创建用户
             user = http.request.env['res.users'].sudo().create({
-                'name': name,
-                'login': phone,
-                'phone': phone,
-                'openid': openid
+                'name': post_data.get('name', '微信用户'),
+                'login': post_data.get('phone'),
+                'phone': post_data.get('phone'),
+                'openid': wechat_user['openid'],
+                'wechat_nickname': wechat_user.get('nickname'),
+                'wechat_sex': str(wechat_user.get('sex', 0)),
+                'wechat_province': wechat_user.get('province'),
+                'wechat_city': wechat_user.get('city')
             })
-            return f"✅ 注册成功！用户ID: {user.id}"
+
+            _logger.info("用户创建成功，ID: %s", user.id)
+            return "✅ 注册成功！用户ID: {}".format(user.id)
+
         except Exception as e:
-            return f"❌ 数据库错误: {str(e)}"
-
-
+            _logger.exception("用户创建失败")
+            return "❌ 注册失败: {}".format(str(e))
 
 # class OAuthLogin(Home):
 #     print(">>> [DEBUG] OAuthLogin", flush=True)
