@@ -299,63 +299,64 @@ class WechatAuthController(http.Controller):
             if existing_user:
                 _logger.info("用户已存在 (email=%s)，使用现有用户: %s (ID: %s)", email, existing_user.login,
                              existing_user.id)
+                return request.redirect('/success?user_id=%s' % existing_user.id)
+
                 # 检查该用户是否已有微信档案
-                user_profile = request.env['wechat.user.profile'].sudo().search([
-                    ('user_id', '=', existing_user.id)
-                ], limit=1)
+                # user_profile = request.env['wechat.user.profile'].sudo().search([
+                #     ('user_id', '=', existing_user.id)
+                # ], limit=1)
 
-                if user_profile:
-                    _logger.info("该用户已有微信档案, 直接跳转到成功页")
-                    return request.redirect('/success?user_id=%s' % existing_user.id)
+                # if user_profile:
+                #     _logger.info("该用户已有微信档案, 直接跳转到成功页")
+                #     return request.redirect('/success?user_id=%s' % existing_user.id)
 
-                else:
-                    # 5) 如果连用户都不存在，则创建一个新的门户用户 (res.users)
-                    portal_group = request.env.ref('base.group_portal')
-                    user_vals = {
-                        'name': name,
-                        'login': email,
-                        'email': email,
-                        'password': '12345',  # 建议生成或提示用户设置密码
-                        'groups_id': [(6, 0, [portal_group.id])],
-                    }
-                    user = request.env['res.users'].sudo().create(user_vals)
-                    _logger.info("成功创建系统用户: %s (ID: %s)", user.login, user.id)
+            # 5) 如果连用户都不存在，则创建一个新的门户用户 (res.users)
+            portal_group = request.env.ref('base.group_portal')
+            user_vals = {
+                'name': name,
+                'login': email,
+                'email': email,
+                'password': '12345',  # 建议生成或提示用户设置密码
+                'groups_id': [(6, 0, [portal_group.id])],
+            }
+            user = request.env['res.users'].sudo().create(user_vals)
+            _logger.info("成功创建系统用户: %s (ID: %s)", user.login, user.id)
 
-                    # 创建对应的微信用户档案
-                    profile_vals = {
-                        'user_id': user.id,
-                        'openid': openid,
-                        'nickname': wechat_user.get('nickname'),
-                        'sex': str(wechat_user.get('sex', 0)),
-                        'city': wechat_user.get('city', ''),
-                        'province': wechat_user.get('province', ''),
-                        'headimgurl': wechat_user.get('headimgurl', ''),
-                        'privilege': simplejson.dumps(wechat_user.get('privilege', [])),
-                        'raw_data': simplejson.dumps(wechat_user),
-                        'wish': wish,
-                    }
-                    new_profile = request.env['wechat.user.profile'].sudo().create(profile_vals)
-                    _logger.info("微信用户档案已创建, profile ID: %s", new_profile.id)
+            # 创建对应的微信用户档案
+            profile_vals = {
+                'user_id': user.id,
+                'openid': openid,
+                'nickname': wechat_user.get('nickname'),
+                'sex': str(wechat_user.get('sex', 0)),
+                'city': wechat_user.get('city', ''),
+                'province': wechat_user.get('province', ''),
+                'headimgurl': wechat_user.get('headimgurl', ''),
+                'privilege': simplejson.dumps(wechat_user.get('privilege', [])),
+                'raw_data': simplejson.dumps(wechat_user),
+                'wish': wish,
+            }
+            new_profile = request.env['wechat.user.profile'].sudo().create(profile_vals)
+            _logger.info("微信用户档案已创建, profile ID: %s", new_profile.id)
 
 
-                    # 6) 成功后发送一条微信消息 (可选)
-                    config = self._get_wechat_config()
-                    success_msg = f"您的表单已成功提交！感谢您, {user.name or '尊敬的用户'}。我们会尽快处理您的请求。"
-                    # Call the static method:
-                    self.__class__.send_wechat_message(
-                        openid=openid,
-                        message=success_msg,
-                        appid=config['appid'],
-                        appsecret=config['secret']
-                    )
+            # 6) 成功后发送一条微信消息 (可选)
+            config = self._get_wechat_config()
+            success_msg = f"您的表单已成功提交！感谢您, {user.name or '尊敬的用户'}。我们会尽快处理您的请求。"
+            # Call the static method:
+            self.__class__.send_wechat_message(
+                openid=openid,
+                message=success_msg,
+                appid=config['appid'],
+                appsecret=config['secret']
+            )
 
-                    _logger.info("success_msg: ", success_msg)
+            _logger.info("success_msg: ", success_msg)
 
-                    # 6) 跳转到成功页并附加 user_id
-                    return request.redirect('/success?user_name=%s&phone=%s' % (
-                        werkzeug.utils.url_quote(user.name),
-                        werkzeug.utils.url_quote(user.login),
-                    ))
+            # 6) 跳转到成功页并附加 user_id
+            return request.redirect('/success?user_name=%s&phone=%s' % (
+                werkzeug.utils.url_quote(user.name),
+                werkzeug.utils.url_quote(user.login),
+            ))
 
         except Exception as e:
             _logger.exception("表单提交处理异常")
