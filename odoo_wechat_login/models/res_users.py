@@ -15,7 +15,7 @@ _logger = logging.getLogger(__name__)
 class ResUsers(models.Model):
     _inherit = "res.users"
 
-    wechat_openid = fields.Char(string="WeChat OpenID")
+    # wechat_openid = fields.Char(string="WeChat OpenID")
     # def bind_to_wechat(self):
     #     self.ensure_one()
     #     appid = self.env["ir.config_parameter"].sudo().get_param("odoo_wechat_login.appid")
