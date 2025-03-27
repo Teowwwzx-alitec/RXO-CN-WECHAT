@@ -178,6 +178,41 @@ class WechatAuthController(http.Controller):
             return self._error_response("页面加载失败，请联系管理员")
 
 
+    def send_wechat_message(openid, message, appid, appsecret):
+        """
+        Sends a simple text message to a user via WeChat Official Account (Service Account).
+        """
+        # 1) Retrieve or store your official account access_token. Usually, you’d store
+        #    and refresh this token in your Odoo system parameters to avoid repeated requests.
+        #    For simplicity, we’ll fetch a fresh token here:
+
+        token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
+        token_resp = requests.get(token_url, timeout=5)
+        token_data = token_resp.json()
+        if 'access_token' not in token_data:
+            _logger.error("Failed to retrieve official account token: %s", token_data)
+            return
+
+        access_token = token_data['access_token']
+
+        # 2) Call the Customer Service Message API
+        send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
+        payload = {
+            "touser": openid,
+            "msgtype": "text",
+            "text": {
+                "content": message
+            }
+        }
+        headers = {'Content-Type': 'application/json'}
+        resp = requests.post(send_url, data=simplejson.dumps(payload), headers=headers, timeout=5)
+        resp_data = resp.json()
+        if resp_data.get('errcode') == 0:
+            _logger.info("WeChat message sent successfully to %s", openid)
+        else:
+            _logger.error("WeChat message failed: %s", resp_data)
+
+
     @http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
     def handle_form_submission(self, **post_data):
         """ 安全处理表单提交并在成功后创建系统用户与微信扩展档案 """
@@ -223,6 +258,7 @@ class WechatAuthController(http.Controller):
                     'email': email,
                     'password': '12345',  # 建议生成或提示用户设置密码
                     'groups_id': [(6, 0, [portal_group.id])],
+                    'wechat_openid': openid,
                 }
                 user = request.env['res.users'].sudo().create(user_vals)
                 _logger.info("成功创建系统用户: %s (ID: %s)", user.login, user.id)
@@ -243,8 +279,14 @@ class WechatAuthController(http.Controller):
                 new_profile = request.env['wechat.user.profile'].sudo().create(profile_vals)
                 _logger.info("微信用户档案已创建, profile ID: %s", new_profile.id)
 
+
             # 6) 跳转到成功页并附加 user_id
-            return request.redirect('/success?user_id=%s' % user.id)
+            # return request.redirect('/success?user_name=%s&phone=%s' % (
+            #     werkzeug.utils.url_quote(user.name),
+            #     werkzeug.utils.url_quote(user.login),
+            # ))
+
+            return request.redirect('/error?error_message=' + werkzeug.utils.url_quote(f"系统错误:"))
 
         except Exception as e:
             _logger.exception("表单提交处理异常")
