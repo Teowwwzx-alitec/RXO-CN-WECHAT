@@ -4,15 +4,17 @@
         <field name="name">wechat.user.profile.tree</field>
         <field name="model">wechat.user.profile</field>
         <field name="arch" type="xml">
-            <field name="user_id"/>
-            <field name="nickname"/>
-            <field name="sex"/>
-            <field name="city"/>
-            <field name="province"/>
-            <field name="headimgurl" widget="url"/>
-            <field name="privilege" widget="textarea"/>
-            <field name="raw_data" widget="textarea" readonly="1"/>
-            <field name="wish"/>
+            <tree string="微信用户档案">
+                <field name="user_id"/>
+                <field name="nickname"/>
+                <field name="sex"/>
+                <field name="city"/>
+                <field name="province"/>
+                <field name="headimgurl" widget="url"/>
+                <field name="privilege" widget="textarea"/>
+                <field name="raw_data" widget="textarea" readonly="1"/>
+                <field name="wish"/>
+            </tree>
         </field>
     </record>
 
