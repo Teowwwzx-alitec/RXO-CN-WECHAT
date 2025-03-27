@@ -27,7 +27,9 @@ class WechatAuthController(http.Controller):
         Send a simple text message to a user via WeChat Official Account (Service Account).
         Uses ensure_ascii=False so that the payload logs are more human-readable in Python.
         """
+
         _logger.info("Preparing to send WeChat message to %s", openid)
+        message = message.encode('utf-8').decode('unicode_escape') if '\\u' in message else message
 
         # 1) Retrieve official account access_token
         token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
@@ -46,20 +48,33 @@ class WechatAuthController(http.Controller):
                 "content": message
             }
         }
-        headers = {'Content-Type': 'application/json'}
 
-        # 2) Use ensure_ascii=False to keep Chinese characters unescaped in logs
+        # 添加字符编码验证
+        if not isinstance(message, str):
+            message = str(message).encode('utf-8').decode('unicode_escape')
+
+        # 增加编码头声明
+        headers = {
+            'Content-Type': 'application/json; charset=utf-8'
+        }
+
+        # 使用更可靠的JSON序列化
         resp = requests.post(
             send_url,
-            data=simplejson.dumps(payload, ensure_ascii=False).encode('utf-8'),
+            json=payload,  # 自动处理编码
             headers=headers,
-            timeout=5
+            timeout=10
         )
+
         resp_data = resp.json()
         if resp_data.get('errcode') == 0:
-            _logger.info("WeChat message sent successfully to %s", openid)
+            _logger.info("消息发送成功至 %s | 内容: %s", openid, message)
+            return True
         else:
-            _logger.error("WeChat message failed: %s", resp_data)
+            _logger.error("微信API错误 | 代码: %s | 消息: %s",
+                          resp_data.get('errcode'),
+                          resp_data.get('errmsg'))
+            return False
 
     def _get_wechat_config(self):
         """ 统一获取微信配置 """
@@ -168,9 +183,7 @@ class WechatAuthController(http.Controller):
             # 存储到session
             http.request.session['wechat_user'] = wechat_user
             _logger.info("用户数据已存入session")
-
             return self._redirect_to_form()
-
 
         except requests.Timeout:
             _logger.error("微信API请求超时")
@@ -217,41 +230,6 @@ class WechatAuthController(http.Controller):
         except ValueError as e:
             _logger.error("模板渲染失败: %s", str(e))
             return self._error_response("页面加载失败，请联系管理员")
-
-
-    def send_wechat_message(openid, message, appid, appsecret):
-        """
-        Sends a simple text message to a user via WeChat Official Account (Service Account).
-        """
-        # 1) Retrieve or store your official account access_token. Usually, you’d store
-        #    and refresh this token in your Odoo system parameters to avoid repeated requests.
-        #    For simplicity, we’ll fetch a fresh token here:
-
-        token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
-        token_resp = requests.get(token_url, timeout=5)
-        token_data = token_resp.json()
-        if 'access_token' not in token_data:
-            _logger.error("Failed to retrieve official account token: %s", token_data)
-            return
-
-        access_token = token_data['access_token']
-
-        # 2) Call the Customer Service Message API
-        send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
-        payload = {
-            "touser": openid,
-            "msgtype": "text",
-            "text": {
-                "content": message
-            }
-        }
-        headers = {'Content-Type': 'application/json'}
-        resp = requests.post(send_url, data=simplejson.dumps(payload), headers=headers, timeout=5)
-        resp_data = resp.json()
-        if resp_data.get('errcode') == 0:
-            _logger.info("WeChat message sent successfully to %s", openid)
-        else:
-            _logger.error("WeChat message failed: %s", resp_data)
 
 
     @http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
@@ -350,7 +328,8 @@ class WechatAuthController(http.Controller):
                 appsecret=config['secret']
             )
 
-            _logger.info("success_msg: ", success_msg)
+            # 正确格式应使用 %s 占位符
+            _logger.info("success_msg: %s", success_msg)
 
             # 6) 跳转到成功页并附加 user_id
             return request.redirect('/success?user_name=%s&phone=%s' % (
