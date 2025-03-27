@@ -20,6 +20,36 @@ _logger = logging.getLogger(__name__)
 
 
 class WechatAuthController(http.Controller):
+    @staticmethod
+    def send_wechat_message(openid, message, appid, appsecret):
+        """
+        Sends a simple text message to a user via WeChat Official Account (Service Account).
+        """
+        _logger.info("Preparing to send WeChat message to %s", openid)
+        token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
+        token_resp = requests.get(token_url, timeout=5)
+        token_data = token_resp.json()
+        if 'access_token' not in token_data:
+            _logger.error("Failed to retrieve official account token: %s", token_data)
+            return
+
+        access_token = token_data['access_token']
+        send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
+        payload = {
+            "touser": openid,
+            "msgtype": "text",
+            "text": {
+                "content": message
+            }
+        }
+        headers = {'Content-Type': 'application/json'}
+        resp = requests.post(send_url, data=simplejson.dumps(payload), headers=headers, timeout=5)
+        resp_data = resp.json()
+        if resp_data.get('errcode') == 0:
+            _logger.info("WeChat message sent successfully to %s", openid)
+        else:
+            _logger.error("WeChat message failed: %s", resp_data)
+
     def _get_wechat_config(self):
         """ 统一获取微信配置 """
         config = http.request.env['ir.config_parameter'].sudo()
@@ -280,27 +310,28 @@ class WechatAuthController(http.Controller):
                 _logger.info("微信用户档案已创建, profile ID: %s", new_profile.id)
 
 
-            # 6) 跳转到成功页并附加 user_id
-            # return request.redirect('/success?user_name=%s&phone=%s' % (
-            #     werkzeug.utils.url_quote(user.name),
-            #     werkzeug.utils.url_quote(user.login),
-            # ))
-
             # 6) 成功后发送一条微信消息 (可选)
-            # config = self._get_wechat_config()  # reuse the method from your controller
-            # success_msg = f"提交成功！感谢您，{user.name or '用户'}。"
-            # self.send_wechat_message(
-            #     openid=openid,
-            #     message=success_msg,
-            #     appid=config['appid'],
-            #     appsecret=config['secret']
-            # )
+            config = self._get_wechat_config()  # reuse the method from your controller
+            success_msg = f"提交成功！感谢您，{user.name or '用户'}。"
+            self.send_wechat_message(
+                openid=openid,
+                message=success_msg,
+                appid=config['appid'],
+                appsecret=config['secret']
+            )
 
-            return request.redirect('/error?error_message=' + werkzeug.utils.url_quote(f"系统错误:"))
+            # 6) 跳转到成功页并附加 user_id
+            return request.redirect('/success?user_name=%s&phone=%s' % (
+                werkzeug.utils.url_quote(user.name),
+                werkzeug.utils.url_quote(user.login),
+            ))
+
+            # return request.redirect('/error?error_message=' + werkzeug.utils.url_quote(f"系统错误:"))
 
         except Exception as e:
             _logger.exception("表单提交处理异常")
             return request.redirect('/error?error_message=' + werkzeug.utils.url_quote(f"系统错误: {str(e)}"))
+
 
     # @http.route('/error', type='http', auth='public', website=True)
     # def error_page(self, **kw):
