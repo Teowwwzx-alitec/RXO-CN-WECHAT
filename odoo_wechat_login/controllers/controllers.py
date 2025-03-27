@@ -323,6 +323,8 @@ class WechatAuthController(http.Controller):
                     appsecret=config['secret']
                 )
 
+                _logger.info("success_msg: ", success_msg)
+
                 # 6) 跳转到成功页并附加 user_id
                 return request.redirect('/success?user_name=%s&phone=%s' % (
                     werkzeug.utils.url_quote(user.name),
