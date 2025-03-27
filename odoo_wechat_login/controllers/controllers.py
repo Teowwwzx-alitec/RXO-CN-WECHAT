@@ -106,23 +106,23 @@ class WechatAuthController(http.Controller):
             # 3. 处理用户数据
             wechat_user = {
                 'openid': user_data.get('openid'),
-                # 'unionid': user_data.get('unionid', ''),
-                # 'nickname': user_data.get('nickname', ''),
-                # 'sex': user_data.get('sex', 0),
-                # 'province': user_data.get('province', ''),
-                # 'city': user_data.get('city', ''),
-                # 'country': user_data.get('country', ''),
-                # 'headimgurl': user_data.get('headimgurl', ''),
-                # 'privilege': user_data.get('privilege', [])
+                'unionid': user_data.get('unionid', ''),
+                'nickname': user_data.get('nickname', ''),
+                'sex': user_data.get('sex', 0),
+                'province': user_data.get('province', ''),
+                'city': user_data.get('city', ''),
+                'country': user_data.get('country', ''),
+                'headimgurl': user_data.get('headimgurl', ''),
+                'privilege': user_data.get('privilege', [])
             }
 
             # 安全日志（不显示敏感信息）
             _logger.info("=== 用户数据摘要 ===")
             _logger.info(f"OpenID: {wechat_user['openid'][:6]}...")
-            # _logger.info(f"UnionID: {wechat_user['unionid'][:6] if wechat_user['unionid'] else '无'}")
-            # _logger.info(f"昵称: {wechat_user['nickname']}")
-            # _logger.info(f"性别: {['未知', '男', '女'][wechat_user['sex']]}")
-            # _logger.info(f"地区: {wechat_user['country']}-{wechat_user['province']}-{wechat_user['city']}")
+            _logger.info(f"UnionID: {wechat_user['unionid'][:6] if wechat_user['unionid'] else '无'}")
+            _logger.info(f"昵称: {wechat_user['nickname']}")
+            _logger.info(f"性别: {['未知', '男', '女'][wechat_user['sex']]}")
+            _logger.info(f"地区: {wechat_user['country']}-{wechat_user['province']}-{wechat_user['city']}")
 
             # 存储到session
             http.request.session['wechat_user'] = wechat_user
@@ -207,23 +207,24 @@ class FormSubmissionController(http.Controller):
             # 准备用户数据 (只包含res.users存在的字段)
             user_vals = {
                 'name': post_data.get('name', wechat_user.get('nickname', '微信用户')),
-                # 'login': post_data.get('phone'),  # 使用手机号作为登录账号
-                # 'phone': post_data.get('phone'),
+                'login': post_data.get('phone'),  # 使用手机号作为登录账号
+                'phone': post_data.get('phone'),
+                'comment': f"WeChat Info: OpenID={wechat_user.get('openid')}, Nickname={wechat_user.get('nickname')}"
             }
 
             # 添加微信相关字段（需先在res.users模型中添加这些字段）
             # 注意：实际使用前需要先添加这些字段到模型中
-            extra_fields = {
-                'wechat_openid': wechat_user.get('openid'),
-                # 'wechat_unionid': wechat_user.get('unionid'),
-                # 'wechat_nickname': wechat_user.get('nickname'),
-                # 'wechat_sex': str(wechat_user.get('sex', 0)),
-                # 'wechat_province': wechat_user.get('province'),
-                # 'wechat_city': wechat_user.get('city')
-            }
-
-            # 过滤掉None值
-            user_vals.update({k: v for k, v in extra_fields.items() if v})
+            # extra_fields = {
+            #     'wechat_openid': wechat_user.get('openid'),
+            #     'wechat_unionid': wechat_user.get('unionid'),
+            #     'wechat_nickname': wechat_user.get('nickname'),
+            #     'wechat_sex': str(wechat_user.get('sex', 0)),
+            #     'wechat_province': wechat_user.get('province'),
+            #     'wechat_city': wechat_user.get('city')
+            # }
+            #
+            # # 过滤掉None值
+            # user_vals.update({k: v for k, v in extra_fields.items() if v})
 
             _logger.info("准备创建用户的数据: %s", user_vals)
 
