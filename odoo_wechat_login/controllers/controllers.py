@@ -308,7 +308,7 @@ class WechatAuthController(http.Controller):
                     _logger.info("该用户已有微信档案, 直接跳转到成功页")
                     return request.redirect('/success?user_id=%s' % existing_user.id)
 
-                    else:
+                else:
                     # 5) 如果连用户都不存在，则创建一个新的门户用户 (res.users)
                     portal_group = request.env.ref('base.group_portal')
                     user_vals = {
