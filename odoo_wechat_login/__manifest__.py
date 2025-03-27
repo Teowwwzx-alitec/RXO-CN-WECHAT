@@ -15,6 +15,7 @@
         "python": ["simplejson"]
     },
     "data": [
+        "security/ir.model.access.csv",
         "data/login_data.xml",
         "views/res_users_views.xml",
         "views/res_config_settings_views.xml",
