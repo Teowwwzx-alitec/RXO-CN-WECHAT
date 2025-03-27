@@ -314,7 +314,7 @@ class WechatAuthController(http.Controller):
 
                 # 6) 成功后发送一条微信消息 (可选)
                 config = self._get_wechat_config()
-                success_msg = f"提交成功！感谢您，{user.name or '用户'}。"
+                success_msg = f"您的表单已成功提交！感谢您, {user.name or '尊敬的用户'}。我们会尽快处理您的请求。"
                 # Call the static method:
                 self.__class__.send_wechat_message(
                     openid=openid,
