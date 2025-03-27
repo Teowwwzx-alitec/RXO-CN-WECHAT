@@ -20,12 +20,12 @@ _logger = logging.getLogger(__name__)
 
 
 class WechatAuthController(http.Controller):
-    @staticmethod
-    def send_wechat_message(openid, message, appid, appsecret):
+    def send_wechat_message(self, openid, message, appid, appsecret):
         """
-        Sends a simple text message to a user via WeChat Official Account (Service Account).
+        Instance method: we include `self` so it can be called as self.send_wechat_message(...)
         """
         _logger.info("Preparing to send WeChat message to %s", openid)
+
         token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
         token_resp = requests.get(token_url, timeout=5)
         token_data = token_resp.json()
