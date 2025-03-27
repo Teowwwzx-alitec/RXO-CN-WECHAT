@@ -11,7 +11,9 @@
     "license": "AGPL-3",
     "version": "17.0.0.1.0",
     "depends": ["auth_oauth"],
-    "external_dependencies": {"python": ["simplejson"]},
+    "external_dependencies": {
+        "python": ["simplejson"]
+    },
     "data": [
         "data/login_data.xml",
         "views/res_users_views.xml",

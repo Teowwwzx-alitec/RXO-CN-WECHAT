@@ -1,5 +1,6 @@
-<!-- views/user_profile_views.xml -->
+<?xml version="1.0" encoding="utf-8"?>
 <odoo>
+
     <record id="view_wechat_profile_tree" model="ir.ui.view">
         <field name="name">wechat.user.profile.tree</field>
         <field name="model">wechat.user.profile</field>
