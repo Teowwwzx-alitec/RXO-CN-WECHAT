@@ -199,11 +199,16 @@ def handle_form_submission(self, **post_data):
 
         phone = post_data.get('phone', '').strip()
         name = post_data.get('name', '测试用户').strip()
+        email = post_data.get('email', '').strip()
 
         # 验证必填字段
         if not phone or len(phone) < 8:
             _logger.error("无效的手机号")
             return self._error_response("无效的手机号，请检查后重试")
+
+        if not email:
+            _logger.info("缺少邮件地址")
+            return self._error_response("无效的邮件地址，请检查后重试")
 
         # 检查是否已存在该微信用户（可选：防止重复绑定）
         existing_profile = request.env['wechat.user.profile'].sudo().search([
@@ -218,6 +223,7 @@ def handle_form_submission(self, **post_data):
             user_vals = {
                 'name': name,
                 'login': phone,
+                'email': email,
                 'password': '12345',  # 建议生成或提示用户设置密码
             }
             user = request.env['res.users'].sudo().create(user_vals)
@@ -237,9 +243,10 @@ def handle_form_submission(self, **post_data):
             request.env['wechat.user.profile'].sudo().create(profile_vals)
             _logger.info("微信用户档案已创建")
 
-        return http.request.render('wechat_login.success_template', {
-            'message': "✅ 用户创建成功！"
-        })
+        return http.request.make_response(
+            simplejson.dumps({"success": True, "message": "用户创建成功", "user_id": user.id}),
+            headers={'Content-Type': 'application/json'}
+        )
 
     except Exception as e:
         _logger.exception("表单提交处理异常")
