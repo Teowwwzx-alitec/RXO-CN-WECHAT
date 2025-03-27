@@ -20,6 +20,8 @@ _logger = logging.getLogger(__name__)
 
 
 class WechatAuthController(http.Controller):
+
+    @staticmethod
     def send_wechat_message(self, openid, message, appid, appsecret):
         """
         Instance method: we include `self` so it can be called as self.send_wechat_message(...)
@@ -310,21 +312,22 @@ class WechatAuthController(http.Controller):
                 _logger.info("微信用户档案已创建, profile ID: %s", new_profile.id)
 
 
-            # 6) 成功后发送一条微信消息 (可选)
-            config = self._get_wechat_config()  # reuse the method from your controller
-            success_msg = f"提交成功！感谢您，{user.name or '用户'}。"
-            self.send_wechat_message(
-                openid=openid,
-                message=success_msg,
-                appid=config['appid'],
-                appsecret=config['secret']
-            )
+                # 6) 成功后发送一条微信消息 (可选)
+                config = self._get_wechat_config()
+                success_msg = f"提交成功！感谢您，{user.name or '用户'}。"
+                # Call the static method:
+                self.__class__.send_wechat_message(
+                    openid=openid,
+                    message=success_msg,
+                    appid=config['appid'],
+                    appsecret=config['secret']
+                )
 
-            # 6) 跳转到成功页并附加 user_id
-            return request.redirect('/success?user_name=%s&phone=%s' % (
-                werkzeug.utils.url_quote(user.name),
-                werkzeug.utils.url_quote(user.login),
-            ))
+                # 6) 跳转到成功页并附加 user_id
+                return request.redirect('/success?user_name=%s&phone=%s' % (
+                    werkzeug.utils.url_quote(user.name),
+                    werkzeug.utils.url_quote(user.login),
+                ))
 
             # return request.redirect('/error?error_message=' + werkzeug.utils.url_quote(f"系统错误:"))
 
