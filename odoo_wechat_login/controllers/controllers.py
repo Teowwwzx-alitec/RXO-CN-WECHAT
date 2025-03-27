@@ -27,54 +27,135 @@ class WechatAuthController(http.Controller):
         Send a simple text message to a user via WeChat Official Account (Service Account).
         Uses ensure_ascii=False so that the payload logs are more human-readable in Python.
         """
+        try:
+            # 预处理消息内容
+            original_msg = message
+            message = message.encode('raw_unicode_escape').decode('utf-8')
 
-        _logger.info("Preparing to send WeChat message to %s", openid)
-        message = message.encode('utf-8').decode('unicode_escape') if '\\u' in message else message
+            # 获取access_token
+            token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
+            token_resp = requests.get(token_url, timeout=5)
+            token_data = token_resp.json()
 
-        # 1) Retrieve official account access_token
-        token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
-        token_resp = requests.get(token_url, timeout=5)
-        token_data = token_resp.json()
-        if 'access_token' not in token_data:
-            _logger.error("Failed to retrieve official account token: %s", token_data)
-            return
+            if 'access_token' not in token_data:
+                _logger.error("[微信API] Token获取失败: %s", token_data)
+                return False
 
-        access_token = token_data['access_token']
-        send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
-        payload = {
-            "touser": openid,
-            "msgtype": "text",
-            "text": {
-                "content": message
+            access_token = token_data['access_token']
+            send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
+
+            # 构造payload并验证编码
+            payload = {
+                "touser": openid,
+                "msgtype": "text",
+                "text": {
+                    "content": message
+                }
             }
-        }
+
+            # 验证编码转换
+            try:
+                payload_bytes = json.dumps(payload, ensure_ascii=False).encode('utf-8')
+                _logger.debug("Payload原始字节: %s", payload_bytes)
+            except Exception as e:
+                _logger.error("JSON序列化失败: %s", str(e))
+                return False
+
+            headers = {
+                'Content-Type': 'application/json; charset=utf-8',
+                'Content-Length': str(len(payload_bytes))
+            }
+
+            resp = requests.post(
+                send_url,
+                data=payload_bytes,
+                headers=headers,
+                timeout=10
+            )
+
+            # 解析响应
+            try:
+                resp_data = resp.json()
+            except json.JSONDecodeError:
+                _logger.error("微信响应解析失败 | 原始响应: %s", resp.text)
+                return False
+
+            if resp_data.get('errcode') == 0:
+                _logger.info("[微信消息] 发送成功 | OpenID: %s | 内容: %s",
+                             openid[:6] + '...',
+                             original_msg)
+                return True
+            else:
+                _logger.error("[微信API错误] 代码: %s | 描述: %s",
+                              resp_data.get('errcode'),
+                              resp_data.get('errmsg', '未知错误'))
+                return False
+
+        except Exception as e:
+            _logger.exception("[微信通信] 严重异常")
+            return False
+
+
+        # # 确保消息为原始字符串
+        # if any(c for c in message if ord(c) > 127):
+        #     message = message.encode('raw_unicode_escape').decode('utf-8')
+        #
+        # # 验证字符编码
+        # try:
+        #     message.encode('gbk')
+        # except UnicodeEncodeError:
+        #     message = message.encode('unicode_escape').decode('ascii')
+        #
+        # _logger.info("Preparing to send WeChat message to %s", openid)
+        # message = message.encode('utf-8').decode('unicode_escape') if '\\u' in message else message
+        #
+        # # 1) Retrieve official account access_token
+        # token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
+        # token_resp = requests.get(token_url, timeout=5)
+        # token_data = token_resp.json()
+        # if 'access_token' not in token_data:
+        #     _logger.error("Failed to retrieve official account token: %s", token_data)
+        #     return
+        #
+        # access_token = token_data['access_token']
+        # send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
+        # payload = {
+        #     "touser": openid,
+        #     "msgtype": "text",
+        #     "text": {
+        #         "content": message
+        #     }
+        # }
 
         # 添加字符编码验证
-        if not isinstance(message, str):
-            message = str(message).encode('utf-8').decode('unicode_escape')
-
-        # 增加编码头声明
-        headers = {
-            'Content-Type': 'application/json; charset=utf-8'
-        }
-
-        # 使用更可靠的JSON序列化
-        resp = requests.post(
-            send_url,
-            json=payload,  # 自动处理编码
-            headers=headers,
-            timeout=10
-        )
-
-        resp_data = resp.json()
-        if resp_data.get('errcode') == 0:
-            _logger.info("消息发送成功至 %s | 内容: %s", openid, message)
-            return True
-        else:
-            _logger.error("微信API错误 | 代码: %s | 消息: %s",
-                          resp_data.get('errcode'),
-                          resp_data.get('errmsg'))
-            return False
+        # if not isinstance(message, str):
+        #     message = str(message).encode('utf-8').decode('unicode_escape')
+        #
+        # # 增加编码头声明
+        # headers = {
+        #     'Content-Type': 'application/json; charset=utf-8'
+        # }
+        #
+        # # With explicit JSON serialization:
+        # resp = requests.post(
+        #     send_url,
+        #     data=json.dumps(payload, ensure_ascii=False).encode('utf-8'),
+        #     headers={'Content-Type': 'application/json; charset=utf-8'},
+        #     timeout=10
+        # )
+        #
+        # _logger.debug("Final message payload bytes: %s",
+        #               json.dumps(payload, ensure_ascii=False).encode('utf-8'))
+        #
+        # resp_data = resp.json()
+        # if resp_data.get('errcode') == 0:
+        #     _logger.info("消息发送成功至 %s | 内容: %s", openid, message)
+        #     return True
+        # else:
+        #     _logger.error("微信API错误 | 代码: %s | 消息: %s",
+        #                   resp_data.get('errcode'),
+        #                   resp_data.get('errmsg'))
+        #     return False
 
     def _get_wechat_config(self):
         """ 统一获取微信配置 """
