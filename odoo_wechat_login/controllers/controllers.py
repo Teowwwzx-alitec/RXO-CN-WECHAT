@@ -185,48 +185,52 @@ class WechatAuthController(http.Controller):
             wechat_user = http.request.session.get('wechat_user', {})
             _logger.info("=== 表单提交调试模式启动 ===")
 
-            if not wechat_user or not wechat_user.get('openid'):
+            # 1) 验证会话中的微信用户信息
+            openid = wechat_user.get('openid')
+            if not openid:
                 _logger.error("会话中未找到微信用户信息")
-                return self._error_response("会话信息丢失，请重新授权")
+                return request.redirect('/error?error_message=' + werkzeug.utils.url_quote("会话信息丢失，请重新授权"))
 
+            # 2) 获取并验证表单数据
             phone = post_data.get('phone', '').strip()
-            name = post_data.get('name', '测试用户').strip()
+            name = post_data.get('name', '').strip()
             email = post_data.get('email', '').strip()
             wish = post_data.get('wish', '').strip()
 
-            # 验证必填字段
             if not phone or len(phone) < 8:
                 _logger.error("无效的手机号")
-                return self._error_response("无效的手机号，请检查后重试")
+                return request.redirect('/error?error_message=' + werkzeug.utils.url_quote("无效的手机号，请检查后重试"))
 
             if not email:
                 _logger.info("缺少邮件地址")
-                return self._error_response("无效的邮件地址，请检查后重试")
+                return request.redirect('/error?error_message=' + werkzeug.utils.url_quote("缺少邮件地址，请检查后重试"))
 
-            # 检查是否已存在该微信用户（可选：防止重复绑定）
+            # 3) 检查是否已存在该微信用户档案 (根据 openid)
             existing_profile = request.env['wechat.user.profile'].sudo().search([
-                ('headimgurl', '=', wechat_user.get('headimgurl', ''))
+                ('openid', '=', openid)
             ], limit=1)
 
             if existing_profile:
-                _logger.info("微信用户已存在，直接使用现有记录")
-                user = existing_profile.user_id
+                # 如果已存在, 直接使用现有用户并跳转到成功页 (或自行决定更新/跳转逻辑)
+                _logger.info("微信用户已存在，使用现有记录 user_id: %s", existing_profile.user_id.id)
+                return request.redirect('/success?user_id=%s' % existing_profile.user_id.id)
             else:
-                # 1. 创建一个新的系统用户 (res.users)
+                # 4) 不存在则创建一个新的门户用户 (res.users)
                 portal_group = request.env.ref('base.group_portal')
                 user_vals = {
                     'name': name,
                     'login': email,
-                    'phone': email,
+                    'email': email,
                     'password': '12345',  # 建议生成或提示用户设置密码
                     'groups_id': [(6, 0, [portal_group.id])],
                 }
                 user = request.env['res.users'].sudo().create(user_vals)
-                _logger.info("成功创建系统用户: %s", user.login)
+                _logger.info("成功创建系统用户: %s (ID: %s)", user.login, user.id)
 
                 # 2. 创建对应的微信用户档案
                 profile_vals = {
                     'user_id': user.id,
+                    'openid': openid,
                     'nickname': wechat_user.get('nickname'),
                     'sex': str(wechat_user.get('sex', 0)),
                     'city': wechat_user.get('city', ''),
@@ -236,10 +240,11 @@ class WechatAuthController(http.Controller):
                     'raw_data': simplejson.dumps(wechat_user),
                     'wish': wish,
                 }
-                request.env['wechat.user.profile'].sudo().create(profile_vals)
-                _logger.info("微信用户档案已创建")
+                new_profile = request.env['wechat.user.profile'].sudo().create(profile_vals)
+                _logger.info("微信用户档案已创建, profile ID: %s", new_profile.id)
 
-            return request.redirect('/success')
+            # 6) 跳转到成功页并附加 user_id
+            return request.redirect('/success?user_id=%s' % user.id)
 
         except Exception as e:
             _logger.exception("表单提交处理异常")
