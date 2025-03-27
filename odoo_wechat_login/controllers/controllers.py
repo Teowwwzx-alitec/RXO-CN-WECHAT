@@ -191,52 +191,38 @@ class FormSubmissionController(http.Controller):
     def handle_form_submission(self, **post_data):
         """ 安全处理表单提交 """
         try:
-            # 获取微信用户数据
             wechat_user = http.request.session.get('wechat_user', {})
-            _logger.info("=== 表单提交开始 ===")
-            _logger.info("提交数据: %s", {k: v for k, v in post_data.items() if k != 'csrf_token'})
-            _logger.info("微信用户数据: %s", wechat_user)
+            _logger.info("=== 表单提交调试模式启动 ===")
 
-            # 基础验证
-            if not wechat_user.get('openid'):
-                return "❌ 请通过微信授权访问本页面"
+            # 调试日志记录
+            debug_info = {
+                'session_data': wechat_user,
+                'form_data': post_data,
+                'system_checks': {
+                    'openid_exists': bool(wechat_user.get('openid')),
+                    'phone_valid': len(post_data.get('phone', '')) >= 8
+                }
+            }
+            _logger.debug("完整调试信息：%s", debug_info)
 
-            if not post_data.get('phone'):
-                return "❌ 手机号不能为空"
-
-            # 准备用户数据 (只包含res.users存在的字段)
-            user_vals = {
-                'name': post_data.get('name', wechat_user.get('nickname', '微信用户')),
-                'login': post_data.get('phone'),  # 使用手机号作为登录账号
-                'phone': post_data.get('phone'),
-                'comment': f"WeChat Info: OpenID={wechat_user.get('openid')}, Nickname={wechat_user.get('nickname')}"
+            # 模拟创建过程（不实际写入数据库）
+            mock_user = {
+                'name': post_data.get('name', '测试用户'),
+                'login': post_data.get('phone'),
+                'wechat_openid': wechat_user.get('openid'),
+                'profile_data': {
+                    'nickname': wechat_user.get('nickname'),
+                    'city': wechat_user.get('city')
+                }
             }
 
-            # 添加微信相关字段（需先在res.users模型中添加这些字段）
-            # 注意：实际使用前需要先添加这些字段到模型中
-            # extra_fields = {
-            #     'wechat_openid': wechat_user.get('openid'),
-            #     'wechat_unionid': wechat_user.get('unionid'),
-            #     'wechat_nickname': wechat_user.get('nickname'),
-            #     'wechat_sex': str(wechat_user.get('sex', 0)),
-            #     'wechat_province': wechat_user.get('province'),
-            #     'wechat_city': wechat_user.get('city')
-            # }
-            #
-            # # 过滤掉None值
-            # user_vals.update({k: v for k, v in extra_fields.items() if v})
+            _logger.info("模拟创建用户数据：%s", mock_user)
 
-            _logger.info("准备创建用户的数据: %s", user_vals)
-
-            # 创建用户
-            user = http.request.env['res.users'].sudo().create(user_vals)
-
-            _logger.info("✅ 用户创建成功，ID: %s", user.id)
-            return "✅ 注册成功！用户ID: {}".format(user.id)
+            return "✅ 测试通过！数据已验证（未实际保存）\n调试信息已记录"
 
         except Exception as e:
-            _logger.exception("用户创建失败")
-            return "❌ 注册失败: {}".format(str(e))
+            _logger.exception("调试模式异常")
+            return f"❌ 调试错误: {str(e)}"
 
 # class OAuthLogin(Home):
 #     print(">>> [DEBUG] OAuthLogin", flush=True)

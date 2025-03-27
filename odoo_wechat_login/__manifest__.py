@@ -16,7 +16,7 @@
         "data/login_data.xml",
         "views/res_users_views.xml",
         "views/res_config_settings_views.xml",
-        # "views/templates_views.xml"
+        "views/wechat_user_profile_views.xml"
     ],
     "installable": True,
     "auto_install": False,
