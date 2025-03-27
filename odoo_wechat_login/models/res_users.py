@@ -15,8 +15,12 @@ _logger = logging.getLogger(__name__)
 class ResUsers(models.Model):
     _inherit = "res.users"
 
-    openid = fields.Char(string="Openid")
-    # wechat_nickname = fields.Char(string='微信昵称')
+    wechat_openid = fields.Char(string='微信OpenID', index=True)
+    # wechat_unionid = fields.Char(string='微信UnionID', index=True)
+    wechat_nickname = fields.Char(string='微信昵称')
+    wechat_sex = fields.Char(string='微信性别')
+    wechat_province = fields.Char(string='微信省份')
+    wechat_city = fields.Char(string='微信城市')
 
     # def bind_to_wechat(self):
     #     self.ensure_one()

@@ -189,28 +189,48 @@ class WechatAuthController(http.Controller):
 class FormSubmissionController(http.Controller):
     @http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
     def handle_form_submission(self, **post_data):
-        """ 处理表单提交（匹配Website Builder字段名） """
-        _logger.info("表单提交开始，数据: %s", {k: v for k, v in post_data.items() if 'password' not in k.lower()})
-
-        # 获取会话中的微信用户
-        wechat_user = http.request.session.get('wechat_user', {})
-        if not wechat_user:
-            return self._error_response("请通过微信授权访问")
-
+        """ 安全处理表单提交 """
         try:
-            # 创建用户
-            user = http.request.env['res.users'].sudo().create({
-                'name': post_data.get('name', '微信用户'),
-                'login': post_data.get('phone'),
+            # 获取微信用户数据
+            wechat_user = http.request.session.get('wechat_user', {})
+            _logger.info("=== 表单提交开始 ===")
+            _logger.info("提交数据: %s", {k: v for k, v in post_data.items() if k != 'csrf_token'})
+            _logger.info("微信用户数据: %s", wechat_user)
+
+            # 基础验证
+            if not wechat_user.get('openid'):
+                return "❌ 请通过微信授权访问本页面"
+
+            if not post_data.get('phone'):
+                return "❌ 手机号不能为空"
+
+            # 准备用户数据 (只包含res.users存在的字段)
+            user_vals = {
+                'name': post_data.get('name', wechat_user.get('nickname', '微信用户')),
+                'login': post_data.get('phone'),  # 使用手机号作为登录账号
                 'phone': post_data.get('phone'),
-                'openid': wechat_user['openid'],
+            }
+
+            # 添加微信相关字段（需先在res.users模型中添加这些字段）
+            # 注意：实际使用前需要先添加这些字段到模型中
+            extra_fields = {
+                'wechat_openid': wechat_user.get('openid'),
+                # 'wechat_unionid': wechat_user.get('unionid'),
                 'wechat_nickname': wechat_user.get('nickname'),
                 'wechat_sex': str(wechat_user.get('sex', 0)),
                 'wechat_province': wechat_user.get('province'),
                 'wechat_city': wechat_user.get('city')
-            })
+            }
 
-            _logger.info("用户创建成功，ID: %s", user.id)
+            # 过滤掉None值
+            user_vals.update({k: v for k, v in extra_fields.items() if v})
+
+            _logger.info("准备创建用户的数据: %s", user_vals)
+
+            # 创建用户
+            user = http.request.env['res.users'].sudo().create(user_vals)
+
+            _logger.info("✅ 用户创建成功，ID: %s", user.id)
             return "✅ 注册成功！用户ID: {}".format(user.id)
 
         except Exception as e:

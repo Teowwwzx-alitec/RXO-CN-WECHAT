@@ -9,8 +9,12 @@
             <field name="arch" type="xml">
                 <data>
                     <field name="login_date" position="after">
-                        <field name="openid" />
-<!--                        <field name="wechat_nickname"/>-->
+                        <field name="wechat_openid"/>
+<!--                        <field name="wechat_unionid"/>-->
+                        <field name="wechat_nickname"/>
+                        <field name="wechat_sex"/>
+                        <field name="wechat_province"/>
+                        <field name="wechat_city"/>
                     </field>
                 </data>
             </field>
