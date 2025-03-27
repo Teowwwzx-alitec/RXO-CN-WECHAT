@@ -213,12 +213,13 @@ class WechatAuthController(http.Controller):
                 user = existing_profile.user_id
             else:
                 # 1. 创建一个新的系统用户 (res.users)
-                # 注意：实际业务中需要更完善的密码和权限管理，这里只是简单示例
+                portal_group = request.env.ref('base.group_portal')
                 user_vals = {
                     'name': name,
-                    'login': phone,
-                    'email': email,
+                    'login': email,
+                    'phone': email,
                     'password': '12345',  # 建议生成或提示用户设置密码
+                    'groups_id': [(6, 0, [portal_group.id])],
                 }
                 user = request.env['res.users'].sudo().create(user_vals)
                 _logger.info("成功创建系统用户: %s", user.login)
@@ -238,21 +239,22 @@ class WechatAuthController(http.Controller):
                 request.env['wechat.user.profile'].sudo().create(profile_vals)
                 _logger.info("微信用户档案已创建")
 
-            return http.request.make_response(
-                simplejson.dumps({"success": True, "message": "用户创建成功", "user_id": user.id}),
-                headers={'Content-Type': 'application/json'}
-            )
+            return request.redirect('/success')
 
         except Exception as e:
             _logger.exception("表单提交处理异常")
             return request.redirect('/error?error_message=' + werkzeug.utils.url_quote(f"系统错误: {str(e)}"))
 
-    @http.route('/error', type='http', auth='public', website=True)
-    def error_page(self, **kw):
-        error_message = kw.get('error_message', '发生错误')
-        return request.render('wechat_login.error_template', {
-            'error_message': error_message
-        })
+    # @http.route('/error', type='http', auth='public', website=True)
+    # def error_page(self, **kw):
+    #     error_message = kw.get('error_message', '发生错误')
+    #     return request.render('wechat_login.error_template', {
+    #         'error_message': error_message
+    #     })
+    #
+    # @http.route('/sucess', type='http', auth='public', website=True)
+    # def success_page(self, **kw):
+    #     return request.render('wechat_login.success_template', {})
 
 
 # class OAuthLogin(Home):

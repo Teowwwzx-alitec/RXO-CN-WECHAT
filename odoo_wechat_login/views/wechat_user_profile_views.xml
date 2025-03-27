@@ -48,7 +48,7 @@
         </field>
     </record>
 
-        <!-- Action to Open the WeChat User Profile Model -->
+    <!-- Action to Open the WeChat User Profile Model -->
     <record id="action_wechat_profile" model="ir.actions.act_window">
         <field name="name">微信用户档案</field>
         <field name="res_model">wechat.user.profile</field>
@@ -61,7 +61,6 @@
     </record>
 
     <menuitem id="menu_wechat_root" name="微信管理" sequence="10"/>
-    <!-- Menu Item for WeChat User Profile -->
     <menuitem id="menu_wechat_profile" name="微信用户档案" parent="menu_wechat_root" action="action_wechat_profile" sequence="1"/>
 
 </odoo>

@@ -6,6 +6,7 @@ class WechatUserProfile(models.Model):
     _description = '微信用户扩展档案'
 
     user_id = fields.Many2one('res.users', '系统用户', required=True)
+    openid = fields.Char('OpenID')
     nickname = fields.Char('微信昵称')
     sex = fields.Selection(
         [('0','未知'), ('1','男'), ('2','女')],
