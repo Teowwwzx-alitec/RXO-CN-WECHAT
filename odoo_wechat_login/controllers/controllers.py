@@ -258,7 +258,7 @@ class WechatAuthController(http.Controller):
                     'email': email,
                     'password': '12345',  # 建议生成或提示用户设置密码
                     'groups_id': [(6, 0, [portal_group.id])],
-                    'wechat_openid': openid,
+                    # 'wechat_openid': openid,
                 }
                 user = request.env['res.users'].sudo().create(user_vals)
                 _logger.info("成功创建系统用户: %s (ID: %s)", user.login, user.id)
@@ -285,6 +285,16 @@ class WechatAuthController(http.Controller):
             #     werkzeug.utils.url_quote(user.name),
             #     werkzeug.utils.url_quote(user.login),
             # ))
+
+            # 6) 成功后发送一条微信消息 (可选)
+            # config = self._get_wechat_config()  # reuse the method from your controller
+            # success_msg = f"提交成功！感谢您，{user.name or '用户'}。"
+            # self.send_wechat_message(
+            #     openid=openid,
+            #     message=success_msg,
+            #     appid=config['appid'],
+            #     appsecret=config['secret']
+            # )
 
             return request.redirect('/error?error_message=' + werkzeug.utils.url_quote(f"系统错误:"))
 
