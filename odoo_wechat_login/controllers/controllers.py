@@ -186,43 +186,64 @@ class WechatAuthController(http.Controller):
             return self._error_response("页面加载失败，请联系管理员")
 
 
-class FormSubmissionController(http.Controller):
-    @http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
-    def handle_form_submission(self, **post_data):
-        """ 安全处理表单提交 """
-        try:
-            wechat_user = http.request.session.get('wechat_user', {})
-            _logger.info("=== 表单提交调试模式启动 ===")
+@http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
+def handle_form_submission(self, **post_data):
+    """ 安全处理表单提交并在成功后创建系统用户与微信扩展档案 """
+    try:
+        wechat_user = http.request.session.get('wechat_user', {})
+        _logger.info("=== 表单提交调试模式启动 ===")
 
-            # 调试日志记录
-            debug_info = {
-                'session_data': wechat_user,
-                'form_data': post_data,
-                'system_checks': {
-                    'openid_exists': bool(wechat_user.get('openid')),
-                    'phone_valid': len(post_data.get('phone', '')) >= 8
-                }
+        if not wechat_user or not wechat_user.get('openid'):
+            _logger.error("会话中未找到微信用户信息")
+            return self._error_response("会话信息丢失，请重新授权")
+
+        phone = post_data.get('phone', '').strip()
+        name = post_data.get('name', '测试用户').strip()
+
+        # 验证必填字段
+        if not phone or len(phone) < 8:
+            _logger.error("无效的手机号")
+            return self._error_response("无效的手机号，请检查后重试")
+
+        # 检查是否已存在该微信用户（可选：防止重复绑定）
+        existing_profile = request.env['wechat.user.profile'].sudo().search([
+            ('headimgurl', '=', wechat_user.get('headimgurl', ''))
+        ], limit=1)
+        if existing_profile:
+            _logger.info("微信用户已存在，直接使用现有记录")
+            user = existing_profile.user_id
+        else:
+            # 1. 创建一个新的系统用户 (res.users)
+            # 注意：实际业务中需要更完善的密码和权限管理，这里只是简单示例
+            user_vals = {
+                'name': name,
+                'login': phone,
+                'password': '12345',  # 建议生成或提示用户设置密码
             }
-            _logger.debug("完整调试信息：%s", debug_info)
+            user = request.env['res.users'].sudo().create(user_vals)
+            _logger.info("成功创建系统用户: %s", user.login)
 
-            # 模拟创建过程（不实际写入数据库）
-            mock_user = {
-                'name': post_data.get('name', '测试用户'),
-                'login': post_data.get('phone'),
-                'wechat_openid': wechat_user.get('openid'),
-                'profile_data': {
-                    'nickname': wechat_user.get('nickname'),
-                    'city': wechat_user.get('city')
-                }
+            # 2. 创建对应的微信用户档案
+            profile_vals = {
+                'user_id': user.id,
+                'nickname': wechat_user.get('nickname'),
+                'sex': str(wechat_user.get('sex', 0)),
+                'city': wechat_user.get('city', ''),
+                'province': wechat_user.get('province', ''),
+                'headimgurl': wechat_user.get('headimgurl', ''),
+                'privilege': simplejson.dumps(wechat_user.get('privilege', [])),
+                'raw_data': simplejson.dumps(wechat_user),
             }
+            request.env['wechat.user.profile'].sudo().create(profile_vals)
+            _logger.info("微信用户档案已创建")
 
-            _logger.info("模拟创建用户数据：%s", mock_user)
+        return http.request.render('wechat_login.success_template', {
+            'message': "✅ 用户创建成功！"
+        })
 
-            return "✅ 测试通过！数据已验证（未实际保存）\n调试信息已记录"
-
-        except Exception as e:
-            _logger.exception("调试模式异常")
-            return f"❌ 调试错误: {str(e)}"
+    except Exception as e:
+        _logger.exception("表单提交处理异常")
+        return self._error_response(f"❌ 系统错误: {str(e)}")
 
 # class OAuthLogin(Home):
 #     print(">>> [DEBUG] OAuthLogin", flush=True)
