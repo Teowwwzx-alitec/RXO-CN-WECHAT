@@ -284,29 +284,23 @@ class WechatAuthController(http.Controller):
     def send_wechat_message(openid, message, appid, appsecret):
         """
         Send a simple text message to a user via WeChat Official Account (Service Account).
-        Uses ensure_ascii=False so that the payload logs are more human-readable in Python.
+
+        :param openid: The WeChat openid of the recipient.
+        :param message: The text content to send.
+        :param appid: The WeChat official account App ID.
+        :param appsecret: The WeChat official account App Secret.
+        :return: True if message was sent successfully, False otherwise.
         """
         try:
-            # 1. 消息预处理
-            # message = message.strip()
-            # if len(message.encode('utf-8')) > 600:  # 约200个汉字
-            #     message = message[:150] + "..."  # 截断过长的消息
-            #
-            # # 2. 替换特殊字符（保持可读性）
-            # safe_message = (
-            #     message.replace('&', '和')
-            #     .replace('<', '(')
-            #     .replace('>', ')')
-            #     .replace('"', "'")
-            # )
-
-            # 3. 获取access_token（带重试机制）
-
-            # 确保消息是字符串类型
+            # 1) Ensure message is a string
             if not isinstance(message, str):
                 message = str(message)
 
-            token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
+            # 2) Get the access_token
+            token_url = (
+                "https://api.weixin.qq.com/cgi-bin/token"
+                f"?grant_type=client_credential&appid={appid}&secret={appsecret}"
+            )
             token_resp = requests.get(token_url, timeout=5)
             token_data = token_resp.json()
 
@@ -314,61 +308,36 @@ class WechatAuthController(http.Controller):
                 _logger.error("获取Token失败: %s", token_data)
                 return False
 
-            # 4. 构造安全的payload
+            access_token = token_data['access_token']
+
+            # 3) Build the payload
             payload = {
                 "touser": openid,
                 "msgtype": "text",
                 "text": {"content": message}
             }
 
-            # 5. 发送请求（使用更安全的json处理）
-            # send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={token_data['access_token']}"
-            # resp = requests.post(
-            #     send_url,
-            #     json=payload,  # 自动处理编码
-            #     headers={'Content-Type': 'application/json'},
-            #     timeout=10
-            # )
+            # 4) Send the request (ensure ASCII=False for Chinese logs)
+            send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
+            headers = {'Content-Type': 'application/json; charset=utf-8'}
 
-            # 发送请求（关键修复：使用bytes和明确的UTF-8编码头）
-            send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={token_data['access_token']}"
-            headers = {
-                'Content-Type': 'application/json; charset=utf-8'
-            }
-
-            # 使用simplejson.dumps确保中文不转义
             resp = requests.post(
                 send_url,
                 data=simplejson.dumps(payload, ensure_ascii=False).encode('utf-8'),
                 headers=headers,
                 timeout=10
             )
-
             resp_data = resp.json()
+
+            # 5) Check WeChat response
             if resp_data.get('errcode') == 0:
-                _logger.info("消息发送成功 | OpenID: %s... | 内容: %s",
-                             openid[:6], message)
+                _logger.info("消息发送成功 | OpenID: %s... | 内容: %s", openid[:6], message)
                 return True
             else:
-                _logger.error("发送失败 | 错误: %s", resp_data.get('errmsg', '未知错误'))
+                _logger.error("发送失败 | 错误码: %s | 信息: %s",
+                              resp_data.get('errcode'),
+                              resp_data.get('errmsg', '未知错误'))
                 return False
-
-            # resp_data = resp.json()
-            # if resp_data.get('errcode') == 0:
-            #     _logger.info("消息发送成功 | OpenID: %s...", openid[:6])
-            #     return True
-            # else:
-            #     error_msg = resp_data.get('errmsg', '未知错误')
-            #     _logger.error("发送失败 | 错误: %s | 消息: %s", error_msg, message)
-            #
-            #     # 处理频率限制错误
-            #     if "response count limit" in error_msg:
-            #         _logger.warning("⚠️ 达到微信消息频率限制，建议：")
-            #         _logger.warning("1. 减少发送频率")
-            #         _logger.warning("2. 合并多条消息")
-            #         _logger.warning("3. 使用模板消息替代客服消息")
-            #
-            #     return False
 
         except Exception as e:
             _logger.exception("消息发送异常")
@@ -377,12 +346,10 @@ class WechatAuthController(http.Controller):
     @http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
     def handle_form_submission(self, **post_data):
         """ 安全处理表单提交并在成功后创建系统用户与微信扩展档案 """
-
-        # success_msg = "您的表单已成功提交！感谢您的参与。"
-
         try:
             wechat_user = http.request.session.get('wechat_user', {})
             _logger.info("=== 表单提交调试模式启动 ===")
+
 
             # 1) 验证会话中的微信用户信息
             openid = wechat_user.get('openid')
@@ -390,11 +357,14 @@ class WechatAuthController(http.Controller):
                 _logger.error("会话中未找到微信用户信息")
                 return request.redirect('/error?error_message=' + werkzeug.utils.url_quote("会话信息丢失，请重新授权"))
 
+
             # 2) 获取并验证表单数据
             phone = post_data.get('phone', '').strip()
             name = post_data.get('name', '').strip()
             email = post_data.get('email', '').strip()
             wish = post_data.get('wish', '').strip()
+
+            config = self._get_wechat_config()
 
             if not phone or len(phone) < 8:
                 _logger.error("无效的手机号")
@@ -404,22 +374,16 @@ class WechatAuthController(http.Controller):
                 _logger.info("缺少邮件地址")
                 return request.redirect('/error?error_message=' + werkzeug.utils.url_quote("缺少邮件地址，请检查后重试"))
 
+
             # 3) 检查是否已存在该微信用户档案 (根据 openid)
             existing_profile = request.env['wechat.user.profile'].sudo().search([
                 ('openid', '=', openid)
             ], limit=1)
 
-
             if existing_profile:
-                # 如果已存在, 直接使用现有用户并跳转到成功页 (或自行决定更新/跳转逻辑)
-                _logger.info("微信用户已存在，使用现有记录 user_id: %s", existing_profile.user_id.id)
-                config = self._get_wechat_config()
+                _logger.info("用户已存在 (nickname=%s) ", existing_profile.nickname)
                 success_msg = (
-                    "表单提交成功通知"
-                    "----------------"
-                    f"姓名："
-                    f"电话："
-                    "感谢您的提交，我们将尽快处理！"
+                    f"微信用户 {existing_profile.nickname} 已存在"
                 )
                 WechatAuthController.send_wechat_message(
                     openid=openid,
@@ -427,7 +391,10 @@ class WechatAuthController(http.Controller):
                     appid=config['appid'],
                     appsecret=config['secret']
                 )
-                return request.redirect('/success?user_id=%s' % existing_profile.user_id.id)
+                return request.redirect('/success?nickname=%s' % (
+                    werkzeug.utils.url_quote(existing_profile.nickname)
+                ))
+
 
             # 4) 如果 openid 不存在, 则检查是否已有相同 email 的用户
             existing_user = request.env['res.users'].sudo().search([
@@ -435,23 +402,32 @@ class WechatAuthController(http.Controller):
             ], limit=1)
 
             if existing_user:
-                _logger.info("用户已存在 (email=%s)，使用现有用户: %s (ID: %s)", email, existing_user.login,
-                             existing_user.id)
+                _logger.info("用户已存在 (name=%s)", existing_user.name)
+                success_msg = (
+                    f"微信用户 {existing_user.name} 已存在"
+                )
+                WechatAuthController.send_wechat_message(
+                    openid=openid,
+                    message=success_msg,
+                    appid=config['appid'],
+                    appsecret=config['secret']
+                )
+                return request.redirect('/success?user_name=%s' % (
+                    werkzeug.utils.url_quote(existing_user.name),
+                ))
 
-
-                return request.redirect('/success?user_id=%s' % existing_user.id)
 
             # 5) 如果连用户都不存在，则创建一个新的门户用户 (res.users)
             portal_group = request.env.ref('base.group_portal')
             user_vals = {
                 'name': name,
                 'login': email,
-                'email': email,
-                'password': '12345',  # 建议生成或提示用户设置密码
+                'phone': phone,
+                'password': '12345',
                 'groups_id': [(6, 0, [portal_group.id])],
             }
             user = request.env['res.users'].sudo().create(user_vals)
-            _logger.info("成功创建系统用户: %s (ID: %s)", user.login, user.id)
+            _logger.info("成功创建系统用户: %s (ID: %s), phone: %s ", user.login, user.id, phone)
 
             # 创建对应的微信用户档案
             profile_vals = {
@@ -469,8 +445,8 @@ class WechatAuthController(http.Controller):
             new_profile = request.env['wechat.user.profile'].sudo().create(profile_vals)
             _logger.info("微信用户档案已创建, profile ID: %s", new_profile.id)
 
+
             # 6) 成功后发送一条微信消息 (可选)
-            config = self._get_wechat_config()
             success_msg = (
                 "表单提交成功通知\n"
                 "----------------\n"
@@ -478,7 +454,7 @@ class WechatAuthController(http.Controller):
                 f"电话：{phone}\n"
                 "感谢您的提交，我们将尽快处理！"
             )
-            # success_msg = ("纯中文消息", "测试消息：表单提交成功！")
+
 
             # 添加发送频率检查
             last_sent = http.request.session.get('last_wechat_msg_time')
@@ -493,7 +469,8 @@ class WechatAuthController(http.Controller):
                 )
                 http.request.session['last_wechat_msg_time'] = datetime.now()
 
-            # 6) 跳转到成功页并附加 user_id
+
+            # 7) 跳转到成功页并附加 user_id
             return request.redirect('/success?user_name=%s&phone=%s' % (
                 werkzeug.utils.url_quote(user.name),
                 werkzeug.utils.url_quote(user.login),
