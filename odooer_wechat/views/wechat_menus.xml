@@ -1,7 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<odoo>
-    <menuitem id="menu_odooer_wechat_root" name="公众号" sequence="9" web_icon="odooer_wechat,static/description/icon.png" groups="base.group_system">
-        <menuitem id="menu_wx_user_list" name="关注用户" sequence="10" action="list_wx_user_action"/>
-        <menuitem id="menu_wx_config_list" name="公众号配置" sequence="10" action="list_wx_config_action"/>
-    </menuitem>
-</odoo>

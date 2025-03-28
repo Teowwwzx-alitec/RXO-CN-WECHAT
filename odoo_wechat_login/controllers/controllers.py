@@ -331,7 +331,7 @@ class WechatAuthController(http.Controller):
                 return True
             else:
                 error_msg = resp_data.get('errmsg', '未知错误')
-                _logger.error("发送失败 | 错误: %s | 消息: %s", error_msg, safe_message)
+                _logger.error("发送失败 | 错误: %s | 消息: %s", error_msg, message)
 
                 # 处理频率限制错误
                 if "response count limit" in error_msg:
