@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
 import base64
-import datetime
 import logging
 import hashlib
 import json
@@ -9,6 +8,7 @@ import simplejson
 import requests
 import werkzeug.utils
 from odoo import http
+from datetime import datetime
 from odoo.http import request
 from werkzeug.urls import url_encode
 from werkzeug.exceptions import BadRequest
@@ -354,16 +354,28 @@ class WechatAuthController(http.Controller):
             new_profile = request.env['wechat.user.profile'].sudo().create(profile_vals)
             _logger.info("微信用户档案已创建, profile ID: %s", new_profile.id)
 
+            # 测试不同编码的消息
+            test_cases = [
+                ("纯英文消息", "Test message: Form submitted successfully!"),
+                ("纯中文消息", "测试消息：表单提交成功！"),
+                ("中英混合", "Test成功! 您的form已提交"),
+                ("特殊字符", "100% 完成 & 感谢支持！"),
+                ("长消息", "这是一条比较长的测试消息，" * 5)
+            ]
+
+
 
             # 6) 成功后发送一条微信消息 (可选)
             config = self._get_wechat_config()
-            success_msg = (
-                "表单提交成功通知\n"
-                "----------------\n"
-                f"姓名：{user.name or '未填写'}\n"
-                f"电话：{phone}\n"
-                "感谢您的提交，我们将尽快处理！"
-            )
+            # success_msg = (
+            #     "表单提交成功通知\n"
+            #     "----------------\n"
+            #     f"姓名：{user.name or '未填写'}\n"
+            #     f"电话：{phone}\n"
+            #     "感谢您的提交，我们将尽快处理！"
+            # )
+            success_msg = ("纯英文消息", "Test message: Form submitted successfully!"),
+
             # 添加发送频率检查
             last_sent = http.request.session.get('last_wechat_msg_time')
             if last_sent and (datetime.now() - last_sent).seconds < 60:
