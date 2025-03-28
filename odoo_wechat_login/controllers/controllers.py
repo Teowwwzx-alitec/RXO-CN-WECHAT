@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import base64
+import datetime
 import logging
 import hashlib
 import json
@@ -20,82 +21,6 @@ _logger = logging.getLogger(__name__)
 
 
 class WechatAuthController(http.Controller):
-
-    @staticmethod
-    def send_wechat_message(openid, message, appid, appsecret):
-        """
-        Send a simple text message to a user via WeChat Official Account (Service Account).
-        Uses ensure_ascii=False so that the payload logs are more human-readable in Python.
-        """
-        try:
-            # 预处理消息内容
-            original_msg = message
-            message = message.encode('raw_unicode_escape').decode('utf-8')
-
-            # 获取access_token
-            token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
-            token_resp = requests.get(token_url, timeout=5)
-            token_data = token_resp.json()
-
-            if 'access_token' not in token_data:
-                _logger.error("[微信API] Token获取失败: %s", token_data)
-                return False
-
-            access_token = token_data['access_token']
-            send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
-
-            # 构造payload并验证编码
-            payload = {
-                "touser": openid,
-                "msgtype": "text",
-                "text": {
-                    "content": message
-                }
-            }
-
-            # 验证编码转换
-            try:
-                payload_bytes = json.dumps(payload, ensure_ascii=False).encode('utf-8')
-                _logger.debug("Payload原始字节: %s", payload_bytes)
-            except Exception as e:
-                _logger.error("JSON序列化失败: %s", str(e))
-                return False
-
-            headers = {
-                'Content-Type': 'application/json; charset=utf-8',
-                'Content-Length': str(len(payload_bytes))
-            }
-
-            resp = requests.post(
-                send_url,
-                data=payload_bytes,
-                headers=headers,
-                timeout=10
-            )
-
-            # 解析响应
-            try:
-                resp_data = resp.json()
-            except json.JSONDecodeError:
-                _logger.error("微信响应解析失败 | 原始响应: %s", resp.text)
-                return False
-
-            if resp_data.get('errcode') == 0:
-                _logger.info("[微信消息] 发送成功 | OpenID: %s | 内容: %s",
-                             openid[:6] + '...',
-                             original_msg)
-                return True
-            else:
-                _logger.error("[微信API错误] 代码: %s | 描述: %s",
-                              resp_data.get('errcode'),
-                              resp_data.get('errmsg', '未知错误'))
-                return False
-
-        except Exception as e:
-            _logger.exception("[微信通信] 严重异常")
-            return False
-
-
     @http.route('/wechat/test_message', type='http', auth='public')
     def test_wechat_message(self, **kwargs):
         """
@@ -354,7 +279,6 @@ class WechatAuthController(http.Controller):
             _logger.error("模板渲染失败: %s", str(e))
             return self._error_response("页面加载失败，请联系管理员")
 
-
     @http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
     def handle_form_submission(self, **post_data):
         """ 安全处理表单提交并在成功后创建系统用户与微信扩展档案 """
@@ -433,16 +357,25 @@ class WechatAuthController(http.Controller):
 
             # 6) 成功后发送一条微信消息 (可选)
             config = self._get_wechat_config()
-            success_msg = f"您的表单已成功提交！感谢您, {user.name or '尊敬的用户'}。我们会尽快处理您的请求。"
-            WechatAuthController.send_wechat_message(
-                openid=openid,
-                message=success_msg,
-                appid=config['appid'],
-                appsecret=config['secret']
+            success_msg = (
+                "表单提交成功通知\n"
+                "----------------\n"
+                f"姓名：{user.name or '未填写'}\n"
+                f"电话：{phone}\n"
+                "感谢您的提交，我们将尽快处理！"
             )
-
-            # 正确格式应使用 %s 占位符
-            _logger.info("success_msg: %s", success_msg)
+            # 添加发送频率检查
+            last_sent = http.request.session.get('last_wechat_msg_time')
+            if last_sent and (datetime.now() - last_sent).seconds < 60:
+                _logger.warning("消息发送过于频繁，已跳过")
+            else:
+                WechatAuthController.send_wechat_message(
+                    openid=openid,
+                    message=success_msg,
+                    appid=config['appid'],
+                    appsecret=config['secret']
+                )
+                http.request.session['last_wechat_msg_time'] = datetime.now()
 
             # 6) 跳转到成功页并附加 user_id
             return request.redirect('/success?user_name=%s&phone=%s' % (
@@ -453,3 +386,69 @@ class WechatAuthController(http.Controller):
         except Exception as e:
             _logger.exception("表单提交处理异常")
             return request.redirect('/error?error_message=' + werkzeug.utils.url_quote(f"系统错误: {str(e)}"))
+
+    @staticmethod
+    def send_wechat_message(openid, message, appid, appsecret):
+        """
+        Send a simple text message to a user via WeChat Official Account (Service Account).
+        Uses ensure_ascii=False so that the payload logs are more human-readable in Python.
+        """
+        try:
+            # 1. 消息预处理
+            message = message.strip()
+            if len(message.encode('utf-8')) > 600:  # 约200个汉字
+                message = message[:150] + "..."  # 截断过长的消息
+
+            # 2. 替换特殊字符（保持可读性）
+            safe_message = (
+                message.replace('&', '和')
+                .replace('<', '(')
+                .replace('>', ')')
+                .replace('"', "'")
+            )
+
+            # 3. 获取access_token（带重试机制）
+            token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
+            token_resp = requests.get(token_url, timeout=5)
+            token_data = token_resp.json()
+
+            if 'access_token' not in token_data:
+                _logger.error("获取Token失败: %s", token_data)
+                return False
+
+            # 4. 构造安全的payload
+            payload = {
+                "touser": openid,
+                "msgtype": "text",
+                "text": {"content": safe_message}
+            }
+
+            # 5. 发送请求（使用更安全的json处理）
+            send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={token_data['access_token']}"
+            resp = requests.post(
+                send_url,
+                json=payload,  # 自动处理编码
+                headers={'Content-Type': 'application/json'},
+                timeout=10
+            )
+
+            resp_data = resp.json()
+            if resp_data.get('errcode') == 0:
+                _logger.info("消息发送成功 | OpenID: %s...", openid[:6])
+                return True
+            else:
+                error_msg = resp_data.get('errmsg', '未知错误')
+                _logger.error("发送失败 | 错误: %s | 消息: %s", error_msg, safe_message)
+
+                # 处理频率限制错误
+                if "response count limit" in error_msg:
+                    _logger.warning("⚠️ 达到微信消息频率限制，建议：")
+                    _logger.warning("1. 减少发送频率")
+                    _logger.warning("2. 合并多条消息")
+                    _logger.warning("3. 使用模板消息替代客服消息")
+
+                return False
+
+        except Exception as e:
+            _logger.exception("消息发送异常")
+            return False
