@@ -301,6 +301,11 @@ class WechatAuthController(http.Controller):
             # )
 
             # 3. 获取access_token（带重试机制）
+
+            # 确保消息是字符串类型
+            if not isinstance(message, str):
+                message = str(message)
+
             token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
             token_resp = requests.get(token_url, timeout=5)
             token_data = token_resp.json()
@@ -317,30 +322,53 @@ class WechatAuthController(http.Controller):
             }
 
             # 5. 发送请求（使用更安全的json处理）
+            # send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={token_data['access_token']}"
+            # resp = requests.post(
+            #     send_url,
+            #     json=payload,  # 自动处理编码
+            #     headers={'Content-Type': 'application/json'},
+            #     timeout=10
+            # )
+
+            # 发送请求（关键修复：使用bytes和明确的UTF-8编码头）
             send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={token_data['access_token']}"
+            headers = {
+                'Content-Type': 'application/json; charset=utf-8'
+            }
+
+            # 使用simplejson.dumps确保中文不转义
             resp = requests.post(
                 send_url,
-                json=payload,  # 自动处理编码
-                headers={'Content-Type': 'application/json'},
+                data=simplejson.dumps(payload, ensure_ascii=False).encode('utf-8'),
+                headers=headers,
                 timeout=10
             )
 
             resp_data = resp.json()
             if resp_data.get('errcode') == 0:
-                _logger.info("消息发送成功 | OpenID: %s...", openid[:6])
+                _logger.info("消息发送成功 | OpenID: %s... | 内容: %s",
+                             openid[:6], message)
                 return True
             else:
-                error_msg = resp_data.get('errmsg', '未知错误')
-                _logger.error("发送失败 | 错误: %s | 消息: %s", error_msg, message)
-
-                # 处理频率限制错误
-                if "response count limit" in error_msg:
-                    _logger.warning("⚠️ 达到微信消息频率限制，建议：")
-                    _logger.warning("1. 减少发送频率")
-                    _logger.warning("2. 合并多条消息")
-                    _logger.warning("3. 使用模板消息替代客服消息")
-
+                _logger.error("发送失败 | 错误: %s", resp_data.get('errmsg', '未知错误'))
                 return False
+
+            # resp_data = resp.json()
+            # if resp_data.get('errcode') == 0:
+            #     _logger.info("消息发送成功 | OpenID: %s...", openid[:6])
+            #     return True
+            # else:
+            #     error_msg = resp_data.get('errmsg', '未知错误')
+            #     _logger.error("发送失败 | 错误: %s | 消息: %s", error_msg, message)
+            #
+            #     # 处理频率限制错误
+            #     if "response count limit" in error_msg:
+            #         _logger.warning("⚠️ 达到微信消息频率限制，建议：")
+            #         _logger.warning("1. 减少发送频率")
+            #         _logger.warning("2. 合并多条消息")
+            #         _logger.warning("3. 使用模板消息替代客服消息")
+            #
+            #     return False
 
         except Exception as e:
             _logger.exception("消息发送异常")
@@ -349,6 +377,9 @@ class WechatAuthController(http.Controller):
     @http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
     def handle_form_submission(self, **post_data):
         """ 安全处理表单提交并在成功后创建系统用户与微信扩展档案 """
+
+        success_msg = "您的表单已成功提交！感谢您的参与。"
+
         try:
             wechat_user = http.request.session.get('wechat_user', {})
             _logger.info("=== 表单提交调试模式启动 ===")
@@ -383,7 +414,7 @@ class WechatAuthController(http.Controller):
                 # 如果已存在, 直接使用现有用户并跳转到成功页 (或自行决定更新/跳转逻辑)
                 _logger.info("微信用户已存在，使用现有记录 user_id: %s", existing_profile.user_id.id)
                 config = self._get_wechat_config()
-                success_msg = ("纯中文消息", "测试消息：表单提交成功！")
+                # success_msg = ("纯中文消息", "测试消息：表单提交成功！")
 
                 WechatAuthController.send_wechat_message(
                     openid=openid,
@@ -433,17 +464,6 @@ class WechatAuthController(http.Controller):
             new_profile = request.env['wechat.user.profile'].sudo().create(profile_vals)
             _logger.info("微信用户档案已创建, profile ID: %s", new_profile.id)
 
-            # 测试不同编码的消息
-            test_cases = [
-                ("纯英文消息", "Test message: Form submitted successfully!"),
-                ("纯中文消息", "测试消息：表单提交成功！"),
-                ("中英混合", "Test成功! 您的form已提交"),
-                ("特殊字符", "100% 完成 & 感谢支持！"),
-                ("长消息", "这是一条比较长的测试消息，" * 5)
-            ]
-
-
-
             # 6) 成功后发送一条微信消息 (可选)
             config = self._get_wechat_config()
             # success_msg = (
@@ -453,7 +473,7 @@ class WechatAuthController(http.Controller):
             #     f"电话：{phone}\n"
             #     "感谢您的提交，我们将尽快处理！"
             # )
-            success_msg = ("纯中文消息", "测试消息：表单提交成功！")
+            # success_msg = ("纯中文消息", "测试消息：表单提交成功！")
 
             # 添加发送频率检查
             last_sent = http.request.session.get('last_wechat_msg_time')
