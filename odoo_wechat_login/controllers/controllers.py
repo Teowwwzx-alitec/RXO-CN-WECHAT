@@ -378,7 +378,7 @@ class WechatAuthController(http.Controller):
     def handle_form_submission(self, **post_data):
         """ 安全处理表单提交并在成功后创建系统用户与微信扩展档案 """
 
-        success_msg = "您的表单已成功提交！感谢您的参与。"
+        # success_msg = "您的表单已成功提交！感谢您的参与。"
 
         try:
             wechat_user = http.request.session.get('wechat_user', {})
@@ -414,8 +414,13 @@ class WechatAuthController(http.Controller):
                 # 如果已存在, 直接使用现有用户并跳转到成功页 (或自行决定更新/跳转逻辑)
                 _logger.info("微信用户已存在，使用现有记录 user_id: %s", existing_profile.user_id.id)
                 config = self._get_wechat_config()
-                # success_msg = ("纯中文消息", "测试消息：表单提交成功！")
-
+                success_msg = (
+                    "表单提交成功通知"
+                    "----------------"
+                    f"姓名："
+                    f"电话："
+                    "感谢您的提交，我们将尽快处理！"
+                )
                 WechatAuthController.send_wechat_message(
                     openid=openid,
                     message=success_msg,
@@ -466,13 +471,13 @@ class WechatAuthController(http.Controller):
 
             # 6) 成功后发送一条微信消息 (可选)
             config = self._get_wechat_config()
-            # success_msg = (
-            #     "表单提交成功通知\n"
-            #     "----------------\n"
-            #     f"姓名：{user.name or '未填写'}\n"
-            #     f"电话：{phone}\n"
-            #     "感谢您的提交，我们将尽快处理！"
-            # )
+            success_msg = (
+                "表单提交成功通知\n"
+                "----------------\n"
+                f"姓名：{user.name or '未填写'}\n"
+                f"电话：{phone}\n"
+                "感谢您的提交，我们将尽快处理！"
+            )
             # success_msg = ("纯中文消息", "测试消息：表单提交成功！")
 
             # 添加发送频率检查
