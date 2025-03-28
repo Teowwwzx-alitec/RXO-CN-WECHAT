@@ -311,9 +311,22 @@ class WechatAuthController(http.Controller):
                 ('openid', '=', openid)
             ], limit=1)
 
+
             if existing_profile:
                 # 如果已存在, 直接使用现有用户并跳转到成功页 (或自行决定更新/跳转逻辑)
                 _logger.info("微信用户已存在，使用现有记录 user_id: %s", existing_profile.user_id.id)
+                config = self._get_wechat_config()
+                success_msg = [
+                    ("纯英文消息", "Test message: Form submitted successfully!"),
+                    ("纯中文消息", "测试消息：表单提交成功！")
+                ]
+
+                WechatAuthController.send_wechat_message(
+                    openid=openid,
+                    message=success_msg,
+                    appid=config['appid'],
+                    appsecret=config['secret']
+                )
                 return request.redirect('/success?user_id=%s' % existing_profile.user_id.id)
 
             # 4) 如果 openid 不存在, 则检查是否已有相同 email 的用户
@@ -324,6 +337,8 @@ class WechatAuthController(http.Controller):
             if existing_user:
                 _logger.info("用户已存在 (email=%s)，使用现有用户: %s (ID: %s)", email, existing_user.login,
                              existing_user.id)
+
+
                 return request.redirect('/success?user_id=%s' % existing_user.id)
 
             # 5) 如果连用户都不存在，则创建一个新的门户用户 (res.users)
