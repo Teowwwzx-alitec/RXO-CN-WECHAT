@@ -20,7 +20,7 @@ _logger = logging.getLogger(__name__)
 
 
 class WechatAuthController(http.Controller):
-    
+
     @staticmethod
     def send_wechat_message(openid, message, appid, appsecret):
         """
@@ -146,6 +146,58 @@ class WechatAuthController(http.Controller):
         except Exception as e:
             _logger.exception("测试异常")
             return f"测试失败: {str(e)}"
+
+    def _send_test_message(self, openid, message, appid, appsecret, case_name):
+        """ 发送测试消息并记录详细日志 """
+        try:
+            _logger.info("=== 测试用例 [%s] ===", case_name)
+            _logger.info("原始消息: %s", message)
+
+            # 1. 获取access_token
+            token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
+            token_resp = requests.get(token_url, timeout=5)
+            token_data = token_resp.json()
+
+            if 'access_token' not in token_data:
+                _logger.error("获取Token失败: %s", token_data)
+                return False
+
+            access_token = token_data['access_token']
+
+            # 2. 准备消息体（确保UTF-8编码）
+            payload = {
+                "touser": openid,
+                "msgtype": "text",
+                "text": {"content": message}
+            }
+
+            # 3. 发送请求（使用simplejson确保中文不转义）
+            send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
+            headers = {'Content-Type': 'application/json; charset=utf-8'}
+
+            _logger.debug("发送Payload: %s", payload)
+
+            resp = requests.post(
+                send_url,
+                data=simplejson.dumps(payload, ensure_ascii=False).encode('utf-8'),
+                headers=headers,
+                timeout=10
+            )
+
+            resp_data = resp.json()
+            _logger.debug("微信响应: %s", resp_data)
+
+            if resp_data.get('errcode') == 0:
+                _logger.info("✅ 测试成功 - %s", case_name)
+                return True
+            else:
+                _logger.error("❌ 测试失败 - %s | 错误: %s",
+                              case_name, resp_data.get('errmsg', '未知错误'))
+                return False
+
+        except Exception as e:
+            _logger.exception("测试用例 [%s] 异常", case_name)
+            return False
 
     def _get_wechat_config(self):
         """ 统一获取微信配置 """
