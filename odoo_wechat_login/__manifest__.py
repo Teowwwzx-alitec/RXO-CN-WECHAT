@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
 {
-    "name": "Wechat login 微信登录",
+    "name": "Wechat Form Submission-微信表单处理",
+    "summary": "通过微信网页扫码实现快速登录",
     "description": """
-    功能介绍
-    ==============
-    * 微信网页扫码登录
+功能介绍
+===============
+* 实现微信网页扫码登录
+* 支持获取微信用户基本信息
+* 与 Odoo 的 OAuth 模块集成
+
+详细信息请参阅官方微信登录文档：
+https://developers.weixin.qq.com/doc/oplatform/Website_App/WeChat_Login/Wechat_Login.html
     """,
     "category": "Extra Tools",
     "author": "soong bo",
