@@ -7,476 +7,571 @@ import json
 import simplejson
 import requests
 import werkzeug.utils
-from odoo import http
-from datetime import datetime
+from odoo import http, fields
+from datetime import datetime, timedelta
 from odoo.http import request
 from werkzeug.urls import url_encode
 from werkzeug.exceptions import BadRequest
 
-from odoo.exceptions import AccessDenied, ValidationError
+from odoo.exceptions import UserError, AccessDenied, ValidationError
 from odoo.addons.auth_oauth.controllers.main import OAuthLogin as Home
 from odoo.addons.auth_oauth.controllers.main import OAuthController as Controller
 
 _logger = logging.getLogger(__name__)
 
+# --- Constants ---
+WECHAT_TOKEN_CACHE_KEY = 'wechat_access_token_{appid}'
+WECHAT_TOKEN_EXPIRY_BUFFER = timedelta(minutes=10) # Refresh token 10 mins before expiry
+MESSAGE_RATE_LIMIT_SECONDS = 60 # Min seconds between messages for the same user session
 
 class WechatAuthController(http.Controller):
-    @http.route('/wechat/test_message', type='http', auth='public')
-    def test_wechat_message(self, **kwargs):
-        """
-        微信消息发送测试端点
-        访问URL: /wechat/test_message?openid=TEST_OPENID
-        """
+    """
+    Controller handling WeChat Official Account (Service Account) OAuth login,
+    user binding/creation, and message sending for Odoo.
+    """
+
+    # ==========================================================================
+    # Helper Methods
+    # ==========================================================================
+
+    def _get_wechat_config(self):
+        """ Safely retrieves WeChat AppID and Secret from Odoo parameters. """
+        config = request.env['ir.config_parameter'].sudo()
+        appid = config.get_param('odoo_wechat_login.appid')
+        appsecret = config.get_param('odoo_wechat_login.appsecret')
+        if not appid or not appsecret:
+            _logger.error("WeChat AppID or AppSecret is not configured in Odoo settings.")
+            # Raise configuration error instead of returning partial dict
+            raise UserError("WeChat integration is not configured correctly. Please contact the administrator.")
+        return {'appid': appid, 'secret': appsecret}
+
+    def _error_response(self, message, log_level='error'):
+        """ Logs an error and redirects to the standard /error page. """
+        log_func = getattr(_logger, log_level, _logger.error)
+        log_func(f"WeChat Auth Error: {message}")
+        # Use werkzeug.urls.url_encode for robust parameter encoding
+        error_param = werkzeug.urls.url_encode({'error_message': message})
+        return request.redirect(f'/error?{error_param}')
+
+    def _prepare_profile_vals(self, wechat_user_info, user_id, openid, form_wish):
+        """ Prepares a dictionary of values for creating/updating wechat.user.profile. """
+        return {
+            'user_id': user_id,
+            'openid': openid,
+            'unionid': wechat_user_info.get('unionid'),
+            'nickname': wechat_user_info.get('nickname'),
+            'sex': str(wechat_user_info.get('sex', 0)), # Storing as string based on previous code
+            'city': wechat_user_info.get('city', ''),
+            'province': wechat_user_info.get('province', ''),
+            'country': wechat_user_info.get('country', ''),
+            'headimgurl': wechat_user_info.get('headimgurl', ''),
+            'privilege': simplejson.dumps(wechat_user_info.get('privilege', [])),
+            'raw_data': simplejson.dumps(wechat_user_info),
+            'wish': form_wish,
+            'last_update_time': fields.Datetime.now(), # Track last update
+        }
+
+    # ==========================================================================
+    # WeChat API Interaction (Token Caching & Messaging)
+    # ==========================================================================
+
+    @classmethod
+    def _fetch_new_wechat_token(cls, appid, appsecret):
+        """ Fetches a new access token from WeChat API. """
+        token_url = "https://api.weixin.qq.com/cgi-bin/token"
+        params = {
+            'grant_type': 'client_credential',
+            'appid': appid,
+            'secret': appsecret,
+        }
         try:
-            openid = kwargs.get('openid', 'ojUNAwrfPBJGzGz-6GQ70gUoyIwQ')  # 测试用openid
-            test_message = "测试消息 - 您的表单已成功提交！感谢您参与测试。"
-
-            _logger.info("=== 开始微信消息发送测试 ===")
-
-            # 获取微信配置
-            config = self._get_wechat_config()
-            if not all([config['appid'], config['secret']]):
-                return "微信配置不完整，请检查系统参数设置"
-
-            # 测试不同编码的消息
-            test_cases = [
-                ("纯英文消息", "Test message: Form submitted successfully!"),
-                ("纯中文消息", "测试消息：表单提交成功！"),
-                ("中英混合", "Test成功! 您的form已提交"),
-                ("特殊字符", "100% 完成 & 感谢支持！"),
-                ("长消息", "这是一条比较长的测试消息，" * 5)
-            ]
-
-            results = []
-            for case_name, message in test_cases:
-                success = self._send_test_message(
-                    openid=openid,
-                    message=message,
-                    appid=config['appid'],
-                    appsecret=config['secret'],
-                    case_name=case_name
-                )
-                results.append(f"{case_name}: {'成功' if success else '失败'}")
-
-            return "<br/>".join([
-                "<h3>微信消息发送测试结果</h3>",
-                f"目标OpenID: {openid}",
-                f"AppID: {config['appid']}",
-                "<hr/>",
-                *results,
-                "<hr/>",
-                "检查Odoo日志获取详细调试信息"
-            ])
-
+            _logger.info(f"Requesting new WeChat access token for AppID: {appid[:4]}...")
+            response = requests.get(token_url, params=params, timeout=10)
+            response.raise_for_status() # Raise HTTPError for bad responses (4xx or 5xx)
+            data = response.json()
+            if 'access_token' in data and 'expires_in' in data:
+                _logger.info(f"Successfully fetched new WeChat access token for AppID: {appid[:4]}...")
+                # Calculate expiry time (add a buffer)
+                expires_at = datetime.now() + timedelta(seconds=data['expires_in'])
+                return data['access_token'], expires_at
+            else:
+                _logger.error(f"Error fetching WeChat token: {data.get('errmsg', 'Unknown error')}")
+                return None, None
+        except requests.exceptions.RequestException as e:
+            _logger.error(f"HTTP error fetching WeChat token: {e}")
+            return None, None
         except Exception as e:
-            _logger.exception("测试异常")
-            return f"测试失败: {str(e)}"
+            _logger.exception("Unexpected error fetching WeChat token.")
+            return None, None
 
-    def _send_test_message(self, openid, message, appid, appsecret, case_name):
-        """ 发送测试消息并记录详细日志 """
+    @classmethod
+    def get_wechat_access_token(cls, appid, appsecret):
+        """
+        Retrieves WeChat access token, using cache first, fetching if needed.
+        Uses ir.cache for simple caching. Consider a more persistent cache for multi-process Odoo.
+        """
+        cache = request.env['ir.cache'].sudo()
+        cache_key = WECHAT_TOKEN_CACHE_KEY.format(appid=appid)
+        cached_data = cache.get(cache_key) # Expected format: (token, expires_at_datetime)
+
+        now = datetime.now()
+        if cached_data:
+            token, expires_at = cached_data
+            # Check if token is still valid (considering buffer)
+            if isinstance(expires_at, datetime) and expires_at - WECHAT_TOKEN_EXPIRY_BUFFER > now:
+                 _logger.debug(f"Using cached WeChat access token for AppID: {appid[:4]}...")
+                 return token
+            else:
+                 _logger.info(f"Cached WeChat token expired or invalid for AppID: {appid[:4]}...")
+
+        # Fetch new token if cache missed or expired
+        token, expires_at = cls._fetch_new_wechat_token(appid, appsecret)
+        if token and expires_at:
+            # Store the new token and its expiry time in cache
+            cache.set(cache_key, (token, expires_at))
+            return token
+        else:
+            # Failed to get a new token
+            return None
+
+    @classmethod
+    def send_wechat_message(cls, openid, message, appid, appsecret):
+        """
+        Sends a text message using the Custom Service API.
+        Uses cached access token.
+        """
+        access_token = cls.get_wechat_access_token(appid, appsecret)
+        if not access_token:
+            _logger.error(f"Cannot send message to {openid[:6]}...: Failed to get access token.")
+            return False
+
+        if not isinstance(message, str):
+            message = str(message)
+
+        payload = {
+            "touser": openid,
+            "msgtype": "text",
+            "text": {"content": message}
+        }
+        send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
+        headers = {'Content-Type': 'application/json; charset=utf-8'}
+
         try:
-            _logger.info("=== 测试用例 [%s] ===", case_name)
-            _logger.info("原始消息: %s", message)
-
-            # 1. 获取access_token
-            token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={appsecret}"
-            token_resp = requests.get(token_url, timeout=5)
-            token_data = token_resp.json()
-
-            if 'access_token' not in token_data:
-                _logger.error("获取Token失败: %s", token_data)
-                return False
-
-            access_token = token_data['access_token']
-
-            # 2. 准备消息体（确保UTF-8编码）
-            payload = {
-                "touser": openid,
-                "msgtype": "text",
-                "text": {"content": message}
-            }
-
-            # 3. 发送请求（使用simplejson确保中文不转义）
-            send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
-            headers = {'Content-Type': 'application/json; charset=utf-8'}
-
-            _logger.debug("发送Payload: %s", payload)
-
+            _logger.info(f"Sending WeChat message to OpenID: {openid[:6]}...")
             resp = requests.post(
                 send_url,
                 data=simplejson.dumps(payload, ensure_ascii=False).encode('utf-8'),
                 headers=headers,
                 timeout=10
             )
-
+            resp.raise_for_status()
             resp_data = resp.json()
-            _logger.debug("微信响应: %s", resp_data)
 
             if resp_data.get('errcode') == 0:
-                _logger.info("✅ 测试成功 - %s", case_name)
+                _logger.info(f"WeChat message sent successfully to OpenID: {openid[:6]}...")
                 return True
             else:
-                _logger.error("❌ 测试失败 - %s | 错误: %s",
-                              case_name, resp_data.get('errmsg', '未知错误'))
+                # Log specific WeChat error
+                _logger.error(f"WeChat message sending failed | Code: {resp_data.get('errcode')} | Msg: {resp_data.get('errmsg', 'Unknown WeChat Error')} | OpenID: {openid[:6]}...")
                 return False
-
+        except requests.exceptions.Timeout:
+             _logger.error(f"Timeout sending WeChat message to OpenID: {openid[:6]}...")
+             return False
+        except requests.exceptions.RequestException as req_err:
+             _logger.error(f"HTTP error sending WeChat message to OpenID: {openid[:6]}... | Error: {req_err}")
+             return False
         except Exception as e:
-            _logger.exception("测试用例 [%s] 异常", case_name)
+            _logger.exception(f"Unexpected error sending WeChat message to OpenID: {openid[:6]}...")
             return False
 
-    def _get_wechat_config(self):
-        """ 统一获取微信配置 """
-        config = http.request.env['ir.config_parameter'].sudo()
-        return {
-            'appid': config.get_param('odoo_wechat_login.appid'),
-            'secret': config.get_param('odoo_wechat_login.appsecret'),
-            'token': config.get_param('odoo_wechat_login.token')
-        }
+    # ==========================================================================
+    # HTTP Routes
+    # ==========================================================================
 
-    # 微信Token验证专用接口（用于公众号后台验证）
     @http.route('/wechat-verify', type='http', auth='public', methods=['GET'], csrf=False)
     def verify_wechat_token(self, **kwargs):
+        """ Handles the initial WeChat server token verification. """
+        # Consider getting the token from config instead of hardcoding
+        # config_token = request.env['ir.config_parameter'].sudo().get_param('odoo_wechat_login.verify_token')
+        config_token = "JIivg0Um8i0b6hGZ4bYQ3q" # Replace with config lookup if preferred
         signature = kwargs.get('signature', '')
         timestamp = kwargs.get('timestamp', '')
         nonce = kwargs.get('nonce', '')
         echostr = kwargs.get('echostr', '')
-        token = "JIivg0Um8i0b6hGZ4bYQ3q"
 
-        tmp_list = sorted([token, timestamp, nonce])
-        tmp_str = ''.join(tmp_list).encode('utf-8')
-        hash_str = hashlib.sha1(tmp_str).hexdigest()
+        if not all([config_token, signature, timestamp, nonce, echostr]):
+             _logger.warning("WeChat verification request missing parameters.")
+             return "Verification Failed: Missing Parameters"
 
-        if hash_str == signature:
-            _logger.info("✅ 微信Token验证成功")
-            return echostr  # 必须返回echostr字符串
-        else:
-            _logger.error(f"❌ Token验证失败 | 收到签名: {signature} | 计算签名: {hash_str}")
-            return "Verification Failed"
-
-    # 核心逻辑：处理微信授权回调
-    @http.route('/form', type='http', auth='public', website=True)
-    def handle_wechat_auth(self, code=None, state=None, **kwargs):
-        """ 处理微信授权回调 """
         try:
-            _logger.info("=== 微信授权回调开始 ===")
-            _logger.info(f"接收参数 - code: {code}, state: {state}")
+            tmp_list = sorted([config_token, timestamp, nonce])
+            tmp_str = ''.join(tmp_list).encode('utf-8')
+            hash_str = hashlib.sha1(tmp_str).hexdigest()
 
-            if not code:
-                _logger.error("缺少code参数")
-                return self._error_response("授权失败：缺少必要参数")
+            if hash_str == signature:
+                _logger.info("WeChat Token verification successful.")
+                return echostr # Must return echostr
+            else:
+                _logger.error(f"WeChat Token verification failed. Received: {signature}, Calculated: {hash_str}")
+                return "Verification Failed"
+        except Exception as e:
+             _logger.exception("Error during WeChat token verification.")
+             return "Verification Error"
 
+    @http.route('/wechat/auth', type='http', auth='public', website=True)
+    def start_wechat_auth(self, redirect=None, **kwargs):
+        """ Redirects user to WeChat authorization page. """
+        try:
+            config = self._get_wechat_config() # Handles missing config error
+            appid = config['appid']
 
-            # 获取微信配置
-            config = self._get_wechat_config()
-            if not all([config['appid'], config['secret']]):
-                _logger.error("微信配置不完整")
-                return self._error_response("系统配置错误")
+            # ** ACTION: Generate and store CSRF state token **
+            # csrf_token = odoo.tools.misc.generate_token()
+            # request.session['wechat_oauth_state'] = csrf_token
+            csrf_token = "dummy_state_token" # Replace with actual generation
+            _logger.info(f"Generated WeChat OAuth state: {csrf_token}") # Log for debugging
 
-            # 1. 获取access_token
-            token_url = (
-                f"https://api.weixin.qq.com/sns/oauth2/access_token?"
-                f"appid={config['appid']}&"
-                f"secret={config['secret']}&"
-                f"code={code}&"
-                f"grant_type=authorization_code"
+            # Ensure redirect_uri is correctly URL-encoded
+            base_url = request.env['ir.config_parameter'].sudo().get_param('web.base.url')
+            redirect_uri = werkzeug.urls.url_join(base_url, '/wechat/callback')
+            encoded_redirect_uri = werkzeug.urls.url_quote(redirect_uri)
+
+            # Store intended redirect after successful login (optional)
+            if redirect:
+                request.session['wechat_oauth_redirect'] = redirect
+
+            auth_url = (
+                f"https://open.weixin.qq.com/connect/oauth2/authorize?"
+                f"appid={appid}&"
+                f"redirect_uri={encoded_redirect_uri}&"
+                f"response_type=code&"
+                f"scope=snsapi_userinfo&" # Scope to get user details
+                f"state={csrf_token}"
+                f"#wechat_redirect"
             )
+            _logger.info(f"Redirecting user to WeChat auth URL for AppID: {appid[:4]}...")
+            return request.redirect(auth_url, local=False)
 
-            _logger.info(f"请求Token URL: {token_url.split('secret=')[0]}...")  # 安全日志
-            token_resp = requests.get(token_url, timeout=10)
+        except UserError as e: # Catch configuration errors
+            return self._error_response(str(e))
+        except Exception as e:
+            _logger.exception("Error initiating WeChat OAuth flow.")
+            return self._error_response("Could not start WeChat authentication.")
+
+    @http.route('/wechat/callback', type='http', auth='public', website=True, csrf=False)
+    def handle_wechat_callback(self, code=None, state=None, **kwargs):
+        """ Handles the callback from WeChat after user authorization. """
+        _logger.info(f"Received WeChat callback - Code: {'yes' if code else 'no'}, State: {state}")
+
+        # ** ACTION: Validate CSRF state token **
+        # expected_state = request.session.get('wechat_oauth_state')
+        # if not state or not expected_state or state != expected_state:
+        #     _logger.error(f"Invalid OAuth state received. Expected: {expected_state}, Got: {state}")
+        #     request.session.pop('wechat_oauth_state', None) # Clean up session
+        #     return self._error_response("Invalid authentication request (State mismatch). Please try again.")
+        # request.session.pop('wechat_oauth_state', None) # Valid state used, remove from session
+        # _logger.info(f"OAuth state validation successful: {state}")
+
+        if not code:
+            error_desc = kwargs.get('error_description', 'Authorization denied by user or WeChat error.')
+            return self._error_response(f"WeChat authorization failed: {error_desc}")
+
+        try:
+            config = self._get_wechat_config() # Handles missing config error
+            appid = config['appid']
+            secret = config['secret']
+
+            # 1. Exchange code for access_token and openid
+            token_url = "https://api.weixin.qq.com/sns/oauth2/access_token"
+            params = {
+                'appid': appid, 'secret': secret, 'code': code, 'grant_type': 'authorization_code'
+            }
+            _logger.info(f"Requesting WeChat OAuth token for AppID: {appid[:4]}...")
+            token_resp = requests.get(token_url, params=params, timeout=10)
+            token_resp.raise_for_status()
             token_data = token_resp.json()
-            _logger.info(f"Token响应: { {k: v for k, v in token_data.items() if k != 'access_token'} }")  # 隐藏敏感信息
 
             if 'errcode' in token_data:
-                _logger.error(f"获取Token失败: {token_data}")
-                return self._error_response(f"微信授权失败（错误代码：{token_data.get('errcode')}）")
+                _logger.error(f"Error exchanging code for token: {token_data}")
+                return self._error_response(f"WeChat authorization error (Code: {token_data.get('errcode')}).")
 
-            # 2. 获取用户信息
-            user_info_url = (
-                f"https://api.weixin.qq.com/sns/userinfo?"
-                f"access_token={token_data['access_token']}&"
-                f"openid={token_data['openid']}&"
-                f"lang=zh_CN"
-            )
+            access_token = token_data.get('access_token')
+            openid = token_data.get('openid')
+            if not access_token or not openid:
+                 _logger.error(f"Missing access_token or openid in WeChat response: {token_data}")
+                 return self._error_response("Failed to retrieve necessary credentials from WeChat.")
 
-            _logger.info(f"请求用户信息URL: {user_info_url.split('access_token=')[0]}...")
-            user_resp = requests.get(user_info_url, timeout=5)
+            _logger.info(f"OAuth token received for OpenID: {openid[:6]}...")
+
+            # 2. Fetch user information
+            user_info_url = "https://api.weixin.qq.com/sns/userinfo"
+            params = {'access_token': access_token, 'openid': openid, 'lang': 'zh_CN'}
+            _logger.info(f"Requesting WeChat user info for OpenID: {openid[:6]}...")
+            user_resp = requests.get(user_info_url, params=params, timeout=10)
+            user_resp.raise_for_status()
             user_data = user_resp.json()
-            _logger.info(f"用户信息原始响应: { {k: v for k, v in user_data.items() if k != 'headimgurl'} }")
 
             if 'errcode' in user_data:
-                _logger.error(f"获取用户信息失败: {user_data}")
-                return self._error_response("无法获取用户信息")
+                _logger.error(f"Error fetching user info: {user_data}")
+                return self._error_response("Could not retrieve user profile from WeChat.")
 
-            # 3. 处理用户数据
-            wechat_user = {
+            # Minimal logging of sensitive data
+            _logger.info(f"User info received - Nickname: {user_data.get('nickname')}, UnionID: {'yes' if user_data.get('unionid') else 'no'}")
+
+            # 3. Store essential info in session for the form/binding step
+            # Only store necessary fields to avoid large session objects
+            wechat_session_data = {
                 'openid': user_data.get('openid'),
-                'unionid': user_data.get('unionid', ''),
-                'nickname': user_data.get('nickname', ''),
-                'sex': user_data.get('sex', 0),
-                'province': user_data.get('province', ''),
-                'city': user_data.get('city', ''),
-                'country': user_data.get('country', ''),
-                'headimgurl': user_data.get('headimgurl', ''),
-                'privilege': user_data.get('privilege', [])
+                'unionid': user_data.get('unionid'),
+                'nickname': user_data.get('nickname'),
+                'sex': user_data.get('sex'),
+                'province': user_data.get('province'),
+                'city': user_data.get('city'),
+                'country': user_data.get('country'),
+                'headimgurl': user_data.get('headimgurl'),
+                'privilege': user_data.get('privilege'),
+                # Do not store access_token in session long-term
             }
+            request.session['wechat_user'] = wechat_session_data
+            _logger.info(f"WeChat user info stored in session for OpenID: {openid[:6]}...")
 
-            # 安全日志（不显示敏感信息）
-            _logger.info("=== 用户数据摘要 ===")
-            _logger.info(f"OpenID: {wechat_user['openid'][:6]}...")
-            _logger.info(f"UnionID: {wechat_user['unionid'][:6] if wechat_user['unionid'] else '无'}")
-            _logger.info(f"昵称: {wechat_user['nickname']}")
-            _logger.info(f"性别: {['未知', '男', '女'][wechat_user['sex']]}")
-            _logger.info(f"地区: {wechat_user['country']}-{wechat_user['province']}-{wechat_user['city']}")
+            # 4. Redirect to the form page
+            return request.redirect("/forms") # Redirect to your form page
 
-            # 存储到session
-            http.request.session['wechat_user'] = wechat_user
-            _logger.info("用户数据已存入session")
-            return self._redirect_to_form()
-
-        except requests.Timeout:
-            _logger.error("微信API请求超时")
-            return self._error_response("微信服务器响应超时，请稍后重试")
+        except UserError as e: # Catch configuration errors
+            return self._error_response(str(e))
+        except requests.exceptions.RequestException as e:
+            _logger.error(f"HTTP error during WeChat callback processing: {e}")
+            return self._error_response("Communication error with WeChat. Please try again.")
         except Exception as e:
-            _logger.exception("微信授权处理异常")
-            return self._error_response(f"系统错误: {str(e)}")
-
-    def _redirect_to_form(self):
-        """ 跳转到表单页 """
-        if not http.request.session.get('wechat_user'):
-            return self._error_response("会话信息丢失")
-        return http.request.redirect("/forms")
-
-    def _error_response(self, message):
-        """ 统一错误响应 """
-        _logger.error(f"错误响应: {message}")
-        return http.request.render('wechat_login.error_template', {
-            'error_message': message
-        })
+            _logger.exception("Unexpected error during WeChat callback processing.")
+            return self._error_response("An internal error occurred.")
 
     @http.route('/forms', type='http', auth='public', website=True)
     def display_form(self, **kwargs):
-        """
-        核心功能：
-        1. 验证微信授权状态
-        2. 传递用户数据到模板
-        3. 渲染Website Builder创建的页面
-        """
-        wechat_user = http.request.session.get('wechat_user')
+        """ Displays the form page, requires WeChat info in session. """
+        wechat_user = request.session.get('wechat_user')
+        if not wechat_user or not wechat_user.get('openid'):
+            _logger.warning(f"Access attempt to /forms without WeChat session. IP: {request.httprequest.remote_addr}")
+            # Redirect to start auth flow instead of just showing error
+            return request.redirect('/wechat/auth')
+            # return self._error_response("Please access this page via the WeChat menu or link.")
 
-        if not wechat_user:
-            _logger.warning("未授权访问尝试，来源IP: %s", http.request.httprequest.remote_addr)
-            return self._error_response("请通过微信公众号菜单访问本页面")
-
-        _logger.info("渲染表单页，OpenID: %s", wechat_user.get('openid', '未知'))
-
+        _logger.info(f"Rendering form page for OpenID: {wechat_user.get('openid')[:6]}...")
         try:
-            # 确保使用正确的模板XML ID
-            return http.request.render('website.alitec-forms', {
+            # Render your specific form template (e.g., 'website.alitec-forms')
+            return request.render('website.alitec-forms', {
                 'wechat_user': wechat_user,
-                'hide_header_footer': True  # 可选：隐藏页头页尾
+                'hide_header_footer': True # Example parameter
             })
-        except ValueError as e:
-            _logger.error("模板渲染失败: %s", str(e))
-            return self._error_response("页面加载失败，请联系管理员")
-
-
-    @staticmethod
-    def send_wechat_message(openid, message, appid, appsecret):
-        """
-        Send a simple text message to a user via WeChat Official Account (Service Account).
-
-        :param openid: The WeChat openid of the recipient.
-        :param message: The text content to send.
-        :param appid: The WeChat official account App ID.
-        :param appsecret: The WeChat official account App Secret.
-        :return: True if message was sent successfully, False otherwise.
-        """
-        try:
-            # 1) Ensure message is a string
-            if not isinstance(message, str):
-                message = str(message)
-
-            # 2) Get the access_token
-            token_url = (
-                "https://api.weixin.qq.com/cgi-bin/token"
-                f"?grant_type=client_credential&appid={appid}&secret={appsecret}"
-            )
-            token_resp = requests.get(token_url, timeout=5)
-            token_data = token_resp.json()
-
-            if 'access_token' not in token_data:
-                _logger.error("获取Token失败: %s", token_data)
-                return False
-
-            access_token = token_data['access_token']
-
-            # 3) Build the payload
-            payload = {
-                "touser": openid,
-                "msgtype": "text",
-                "text": {"content": message}
-            }
-
-            # 4) Send the request (ensure ASCII=False for Chinese logs)
-            send_url = f"https://api.weixin.qq.com/cgi-bin/message/custom/send?access_token={access_token}"
-            headers = {'Content-Type': 'application/json; charset=utf-8'}
-
-            resp = requests.post(
-                send_url,
-                data=simplejson.dumps(payload, ensure_ascii=False).encode('utf-8'),
-                headers=headers,
-                timeout=10
-            )
-            resp_data = resp.json()
-
-            # 5) Check WeChat response
-            if resp_data.get('errcode') == 0:
-                _logger.info("消息发送成功 | OpenID: %s... | 内容: %s", openid[:6], message)
-                return True
-            else:
-                _logger.error("发送失败 | 错误码: %s | 信息: %s",
-                              resp_data.get('errcode'),
-                              resp_data.get('errmsg', '未知错误'))
-                return False
-
         except Exception as e:
-            _logger.exception("消息发送异常")
-            return False
+            # Catch potential template rendering errors
+            _logger.exception("Error rendering form template.")
+            return self._error_response("Could not load the page. Please contact support.")
 
     @http.route('/forms/submit', type='http', auth='public', website=True, csrf=False)
     def handle_form_submission(self, **post_data):
-        """ 安全处理表单提交并在成功后创建系统用户与微信扩展档案 """
+        """
+        Handles form submission, finds/binds/creates user, logs them in,
+        and redirects to success page.
+        """
+        # 1. Verify WeChat session
+        wechat_user_info = request.session.get('wechat_user')
+        openid = wechat_user_info.get('openid') if wechat_user_info else None
+        if not openid:
+            _logger.error("Form submission attempt without WeChat OpenID in session.")
+            return self._error_response("Your session has expired. Please re-authenticate via WeChat.")
+
+        _logger.info(f"=== Form Submission Start - OpenID: {openid[:6]}... ===")
+
+        # 2. Get and Validate Form Data
+        form_phone = post_data.get('phone', '').strip()
+        form_email = post_data.get('email', '').strip().lower() # Normalize email
+        form_name = post_data.get('name', '').strip()
+        form_wish = post_data.get('wish', '').strip()
+
+        # Server-side validation is crucial
+        errors = []
+        if not form_phone or len(form_phone) < 8: # Basic length check
+            errors.append("A valid phone number is required.")
+        if not form_email or '@' not in form_email or '.' not in form_email:
+            errors.append("A valid email address is required.")
+        # Add other necessary validations (e.g., name required?)
+
+        if errors:
+            # Consider redirecting back to the form with errors displayed,
+            # or use the generic error page.
+            _logger.warning(f"Form validation failed for OpenID {openid[:6]}: {errors}")
+            return self._error_response("Please correct the following errors: " + ", ".join(errors))
+
+        _logger.info(f"Form data validated - Email: {form_email}, Phone: {form_phone}")
+
         try:
-            wechat_user = http.request.session.get('wechat_user', {})
-            _logger.info("=== 表单提交调试模式启动 ===")
+            config = self._get_wechat_config() # Get config for messaging
+            env = request.env
+            WechatUserProfile = env['wechat.user.profile'].sudo()
+            ResUsers = env['res.users'].sudo()
+            ResPartner = env['res.partner'].sudo()
 
+            user_to_process = None
+            outcome = None
+            success_msg_content = "" # Content for the WeChat message
 
-            # 1) 验证会话中的微信用户信息
-            openid = wechat_user.get('openid')
-            if not openid:
-                _logger.error("会话中未找到微信用户信息")
-                return request.redirect('/error?error_message=' + werkzeug.utils.url_quote("会话信息丢失，请重新授权"))
+            # --- Logic Step 1: Check by OpenID via wechat.user.profile ---
+            existing_profile = WechatUserProfile.search([('openid', '=', openid)], limit=1)
 
+            if existing_profile and existing_profile.user_id:
+                _logger.info(f"Found existing profile for OpenID {openid[:6]} linked to User ID: {existing_profile.user_id.id}. Outcome: existing.")
+                user_to_process = existing_profile.user_id
+                outcome = 'existing'
+                success_msg_content = f"Welcome back, {user_to_process.name}! Your information is already registered."
+                # Optional: Update profile data if changed
+                try:
+                    update_vals = self._prepare_profile_vals(wechat_user_info, user_to_process.id, openid, form_wish)
+                    # Avoid overwriting user_id/openid
+                    update_vals.pop('user_id', None)
+                    update_vals.pop('openid', None)
+                    existing_profile.write(update_vals)
+                    _logger.info(f"Updated profile data for Profile ID: {existing_profile.id}")
+                except Exception as e_update:
+                    _logger.exception(f"Error updating profile ID {existing_profile.id}") # Log error but continue
 
-            # 2) 获取并验证表单数据
-            phone = post_data.get('phone', '').strip()
-            name = post_data.get('name', '').strip()
-            email = post_data.get('email', '').strip()
-            wish = post_data.get('wish', '').strip()
+            # --- Logic Step 2: Check by Email via res.users (if OpenID didn't match) ---
+            elif not user_to_process:
+                existing_user = ResUsers.search([('login', '=', form_email)], limit=1)
 
-            config = self._get_wechat_config()
+                if existing_user:
+                    _logger.info(f"Found existing User ID: {existing_user.id} by email {form_email}. OpenID {openid[:6]} not yet linked. Binding now. Outcome: linked.")
+                    user_to_process = existing_user
+                    outcome = 'linked' # Use 'linked' for clarity
 
-            if not phone or len(phone) < 8:
-                _logger.error("无效的手机号")
-                return request.redirect('/error?error_message=' + werkzeug.utils.url_quote("无效的手机号，请检查后重试"))
+                    # Create the profile to bind WeChat
+                    try:
+                        profile_vals = self._prepare_profile_vals(wechat_user_info, user_to_process.id, openid, form_wish)
+                        # Check if a profile exists for this user but different openid (unlikely here, but possible)
+                        WechatUserProfile.create(profile_vals)
+                        _logger.info(f"Created WeChat profile to link OpenID {openid[:6]} to User ID: {user_to_process.id}")
+                        success_msg_content = f"Hello {user_to_process.name}! We've linked your WeChat account to your existing profile ({form_email})."
+                    except Exception as e_bind:
+                        _logger.exception(f"Failed to create wechat.user.profile for binding User ID {user_to_process.id} to OpenID {openid[:6]}.")
+                        return self._error_response(f"Failed to link WeChat account. Error: {e_bind}")
 
-            if not email:
-                _logger.info("缺少邮件地址")
-                return request.redirect('/error?error_message=' + werkzeug.utils.url_quote("缺少邮件地址，请检查后重试"))
+            # --- Logic Step 3: Create New User (if neither OpenID nor Email matched) ---
+            if not user_to_process:
+                _logger.info(f"No existing profile/user found for OpenID {openid[:6]} / Email {form_email}. Creating new user. Outcome: new.")
+                outcome = 'new'
+                try:
+                    # Ensure portal group exists
+                    portal_group = env.ref('base.group_portal', raise_if_not_found=True)
 
+                    # Create Partner first
+                    partner_vals = {
+                        'name': form_name or form_email, # Use email as fallback name
+                        'email': form_email,
+                        'phone': form_phone,
+                        'is_company': False,
+                        # Add other partner fields if needed
+                    }
+                    partner = ResPartner.create(partner_vals)
+                    _logger.info(f"Created new Partner ID: {partner.id}")
 
-            # 3) 检查是否已存在该微信用户档案 (根据 openid)
-            existing_profile = request.env['wechat.user.profile'].sudo().search([
-                ('openid', '=', openid)
-            ], limit=1)
+                    # Create User linked to Partner
+                    user_vals = {
+                        'name': form_name or form_email,
+                        'login': form_email,
+                        'phone': form_phone, # Store phone on user as well?
+                        'active': True,
+                        'groups_id': [(6, 0, [portal_group.id])],
+                        'partner_id': partner.id,
+                        # ** SECURITY ACTION: Handle Password **
+                        # Option 1: Use Odoo Signup (Recommended) - Requires auth_signup module
+                        # 'action_id': env.ref('auth_signup.action_signup').id, # Example, needs setup
+                        # Option 2: Set no password initially if WeChat is primary login
+                        # Option 3: Generate secure random password (less user friendly)
+                        # 'password': odoo.tools.misc.generate_password(),
+                    }
+                    # Use context to potentially bypass password reset email if using signup tokens
+                    new_user = ResUsers.with_context(no_reset_password=True).create(user_vals)
+                    user_to_process = new_user
+                    _logger.info(f"Created new User ID: {user_to_process.id}")
 
-            if existing_profile:
-                _logger.info("用户已存在 (nickname=%s) ", existing_profile.nickname)
-                success_msg = (
-                    f"微信用户 {existing_profile.nickname} 已存在"
-                )
-                WechatAuthController.send_wechat_message(
-                    openid=openid,
-                    message=success_msg,
-                    appid=config['appid'],
-                    appsecret=config['secret']
-                )
-                return request.redirect('/success?nickname=%s' % (
-                    werkzeug.utils.url_quote(existing_profile.nickname)
-                ))
+                    # Create profile linked to New User
+                    profile_vals = self._prepare_profile_vals(wechat_user_info, user_to_process.id, openid, form_wish)
+                    WechatUserProfile.create(profile_vals)
+                    _logger.info(f"Created WeChat profile for new User ID: {user_to_process.id}")
 
+                    success_msg_content = (
+                        "Registration Successful!\n"
+                        f"Name: {user_to_process.name}\nEmail: {form_email}\nPhone: {form_phone}\n"
+                        "Thank you for registering."
+                    )
+                except Exception as e_create:
+                    _logger.exception("Error during new User/Partner/Profile creation.")
+                    # Consider attempting cleanup (delete partner?) - complex
+                    return self._error_response(f"Failed to create your profile. Error: {e_create}")
 
-            # 4) 如果 openid 不存在, 则检查是否已有相同 email 的用户
-            existing_user = request.env['res.users'].sudo().search([
-                ('login', '=', email)
-            ], limit=1)
+            # --- Post-processing: Login, Send Message, Redirect ---
+            if user_to_process and outcome:
+                # ** ACTION: Implement Odoo User Login **
+                # This step is crucial for user experience but complex.
+                # Requires careful handling of passwords or using OAuth session mechanisms.
+                try:
+                    # Example using password (IF a password was set securely)
+                    # request.session.authenticate(request.env.cr.dbname, user_to_process.login, SECURE_PASSWORD_VARIABLE)
 
-            if existing_user:
-                _logger.info("用户已存在 (name=%s)", existing_user.name)
-                success_msg = (
-                    f"微信用户 {existing_user.name} 已存在"
-                )
-                WechatAuthController.send_wechat_message(
-                    openid=openid,
-                    message=success_msg,
-                    appid=config['appid'],
-                    appsecret=config['secret']
-                )
-                return request.redirect('/success?user_name=%s' % (
-                    werkzeug.utils.url_quote(existing_user.name),
-                ))
+                    # Example using uid directly (less standard for web logins, use with caution)
+                    # request.session.uid = user_to_process.id
+                    # request.env['res.users'].browse(user_to_process.id)._update_last_login()
 
+                    # Best approach might involve Odoo's auth_oauth helpers if applicable,
+                    # or redirecting through a login flow that recognizes the session.
+                    _logger.info(f"User {user_to_process.login} (ID: {user_to_process.id}) identified/created. Login step placeholder.")
+                    # For now, we proceed without explicit login, relying on potential future logins.
 
-            # 5) 如果连用户都不存在，则创建一个新的门户用户 (res.users)
-            portal_group = request.env.ref('base.group_portal')
-            user_vals = {
-                'name': name,
-                'login': email,
-                'phone': phone,
-                'password': '12345',
-                'groups_id': [(6, 0, [portal_group.id])],
-            }
-            user = request.env['res.users'].sudo().create(user_vals)
-            _logger.info("成功创建系统用户: %s (ID: %s), phone: %s ", user.login, user.id, phone)
+                except Exception as auth_err:
+                     _logger.error(f"Failed to authenticate user {user_to_process.login} after creation/binding: {auth_err}")
+                     # Decide if this is critical - maybe redirect to login page?
 
-            # 创建对应的微信用户档案
-            profile_vals = {
-                'user_id': user.id,
-                'openid': openid,
-                'nickname': wechat_user.get('nickname'),
-                'sex': str(wechat_user.get('sex', 0)),
-                'city': wechat_user.get('city', ''),
-                'province': wechat_user.get('province', ''),
-                'headimgurl': wechat_user.get('headimgurl', ''),
-                'privilege': simplejson.dumps(wechat_user.get('privilege', [])),
-                'raw_data': simplejson.dumps(wechat_user),
-                'wish': wish,
-            }
-            new_profile = request.env['wechat.user.profile'].sudo().create(profile_vals)
-            _logger.info("微信用户档案已创建, profile ID: %s", new_profile.id)
+                # Send WeChat Confirmation Message (with rate limiting)
+                if success_msg_content:
+                    last_sent_dt = request.session.get('last_wechat_msg_time')
+                    now = datetime.now()
+                    # Ensure last_sent_dt is a datetime object before comparison
+                    allow_send = True
+                    if isinstance(last_sent_dt, datetime):
+                        if (now - last_sent_dt).total_seconds() < MESSAGE_RATE_LIMIT_SECONDS:
+                            allow_send = False
+                            _logger.warning(f"WeChat message sending skipped for OpenID {openid[:6]}... due to rate limit.")
 
+                    if allow_send:
+                        send_status = self.send_wechat_message(
+                            openid, success_msg_content, config['appid'], config['secret']
+                        )
+                        if send_status:
+                            # Store timestamp as datetime object in session
+                            request.session['last_wechat_msg_time'] = now
 
-            # 6) 成功后发送一条微信消息 (可选)
-            success_msg = (
-                "表单提交成功通知\n"
-                "----------------\n"
-                f"姓名：{user.name or '未填写'}\n"
-                f"电话：{phone}\n"
-                "感谢您的提交，我们将尽快处理！"
-            )
-
-
-            # 添加发送频率检查
-            last_sent = http.request.session.get('last_wechat_msg_time')
-            if last_sent and (datetime.now() - last_sent).seconds < 60:
-                _logger.warning("消息发送过于频繁，已跳过")
+                # Redirect to success page using f-string for clarity
+                params = {
+                    'outcome': outcome,
+                    'user_name': user_to_process.name or 'User',
+                    'phone': user_to_process.phone or ''
+                }
+                redirect_url = f'/success?{werkzeug.urls.url_encode(params)}'
+                _logger.info(f"Redirecting to success page: {redirect_url}")
+                # Clear the WeChat user info from session after successful processing
+                request.session.pop('wechat_user', None)
+                return request.redirect(redirect_url)
             else:
-                WechatAuthController.send_wechat_message(
-                    openid=openid,
-                    message=success_msg,
-                    appid=config['appid'],
-                    appsecret=config['secret']
-                )
-                http.request.session['last_wechat_msg_time'] = datetime.now()
+                # Fallback if logic somehow failed to set user or outcome
+                _logger.error("Processing completed without determining user or outcome.")
+                return self._error_response("An unexpected error occurred processing your information.")
 
-
-            # 7) 跳转到成功页并附加 user_id
-            return request.redirect('/success?user_name=%s&phone=%s' % (
-                werkzeug.utils.url_quote(user.name),
-                werkzeug.utils.url_quote(user.login),
-            ))
-
+        except UserError as e: # Catch configuration errors during processing
+            return self._error_response(str(e))
+        except ValidationError as e: # Catch Odoo validation errors
+             _logger.warning(f"Validation error during form submission: {e}")
+             return self._error_response(f"Invalid data: {e}")
         except Exception as e:
-            _logger.exception("表单提交处理异常")
-            return request.redirect('/error?error_message=' + werkzeug.utils.url_quote(f"系统错误: {str(e)}"))
-
+            _logger.exception("Unhandled exception in form submission handler.")
+            return self._error_response("An unexpected system error occurred.")
