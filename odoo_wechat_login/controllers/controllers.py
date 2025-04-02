@@ -381,7 +381,7 @@ class WechatAuthController(http.Controller):
             'sex': str(wechat_user_session_data.get('sex', 0)),  # Store as string if model field is Char
             'city': wechat_user_session_data.get('city', ''),
             'province': wechat_user_session_data.get('province', ''),
-            'country': wechat_user_session_data.get('country', ''),
+            # 'country': wechat_user_session_data.get('country', ''),
             'headimgurl': wechat_user_session_data.get('headimgurl', ''),
             # Store complex types as JSON strings if model fields are Text/Char
             'privilege': simplejson.dumps(wechat_user_session_data.get('privilege', [])),
