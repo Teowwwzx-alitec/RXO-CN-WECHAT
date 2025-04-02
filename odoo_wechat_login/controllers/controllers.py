@@ -37,8 +37,7 @@ class WechatAuthController(http.Controller):
     def verify_wechat_token(self, signature=None, timestamp=None, nonce=None, echostr=None, **kwargs):
         """ 处理来自微信服务器的初始 Token 验证 """
         # 安全地获取验证 Token (替换硬编码值)
-        token = request.env['ir.config_parameter'].sudo().get_param('odoo_wechat_login.token',
-                                                                    "DEFAULT_FALLBACK_TOKEN")  # 示例备用值
+        token = request.env['ir.config_parameter'].sudo().get_param('odoo_wechat_login.token')
         if not token:
             _logger.error("系统中未设置微信验证 Token。")
             return "配置错误"  # Configuration Error
@@ -105,7 +104,7 @@ class WechatAuthController(http.Controller):
             # 2. 使用 access_token 获取用户信息
             user_info_url = (
                 f"https://api.weixin.qq.com/sns/userinfo?"
-                f"access_token={access_token}&openid={openid}&lang=zh_CN"  # 使用简体中文
+                f"access_token={access_token}&openid={openid}&lang=zh_CN"
             )
             _logger.info(f"请求用户信息，OpenID: {openid[:6]}...")
             user_resp = requests.get(user_info_url, timeout=10)
@@ -120,7 +119,7 @@ class WechatAuthController(http.Controller):
             # 3. 准备用户数据并存入 session
             wechat_user = {
                 'openid': user_data.get('openid'),
-                'unionid': user_data.get('unionid'),  # 如果可用，存储 unionid
+                # 'unionid': user_data.get('unionid'),  # 如果可用，存储 unionid
                 'nickname': user_data.get('nickname'),
                 'sex': user_data.get('sex'),
                 'province': user_data.get('province'),
@@ -330,25 +329,36 @@ class WechatAuthController(http.Controller):
 
                 # 发送微信确认消息 (带频率限制)
                 if success_msg:  # 仅当准备了消息时发送
-                    last_sent_dt = request.session.get('last_wechat_msg_time')
-                    # 确保 last_sent 是 datetime 对象再比较
-                    can_send = True
-                    if isinstance(last_sent_dt, datetime):
-                        if (datetime.now() - last_sent_dt).total_seconds() < 60:  # 60 秒冷却时间
-                            can_send = False
-                            _logger.warning(f"因频率限制，已跳过为 OpenID {openid[:6]} 发送微信消息。")
+                    # 从 session 获取当前尝试次数，如果不存在则默认为 0
+                    send_attempts = request.session.get('wechat_msg_send_attempts', 0)
 
-                    if can_send:
-                        # 调用静态方法
+                    if send_attempts < 3:
+                        _logger.info(f"准备发送微信消息 (尝试次数 {send_attempts + 1}/3) 给 OpenID {openid[:6]}...")
+
+                        # 在尝试发送 *之前* 立即增加 session 中的尝试次数计数器
+                        request.session['wechat_msg_send_attempts'] = send_attempts + 1
+
+                        # 调用静态方法尝试发送
                         send_status = WechatAuthController.send_wechat_message(openid, success_msg, config['appid'],
                                                                                config['secret'])
-                        if send_status:
-                            request.session['last_wechat_msg_time'] = datetime.now()  # 存储 datetime 对象
-                        else:
-                            _logger.error(f"未能为 OpenID {openid[:6]} 发送微信确认消息...")
-                            # 通常不关键，继续重定向
 
-                # 重定向到成功页面
+                        if send_status:
+                            _logger.info(f"微信消息在第 {send_attempts + 1} 次尝试时成功发送。")
+                            # 可选：如果希望每次成功都重置计数器（对于欢迎消息可能不需要）
+                            # request.session['wechat_msg_send_attempts'] = 0
+                        else:
+                            # 记录发送失败，但流程继续
+                            _logger.error(
+                                f"在第 {send_attempts + 1} 次尝试时未能为 OpenID {openid[:6]} 发送微信确认消息...")
+                            # 注意：即使发送失败，我们仍然会重定向到成功页面
+
+                    else:
+                        # 已达到尝试次数限制
+                        _logger.warning(
+                            f"当前会话中 OpenID {openid[:6]} 的微信消息发送尝试次数已达上限 (3次)。消息未发送。")
+                        # 此处不发送消息，但注册/绑定仍然是成功的，将重定向到成功页面
+
+                    # 重定向到成功页面
                 redirect_url = '/success?outcome=%s&user_name=%s&phone=%s' % (
                     outcome,
                     werkzeug.utils.url_quote(user_to_process.name or '用户'),  # 确保 name 存在
@@ -360,10 +370,6 @@ class WechatAuthController(http.Controller):
                 # 如果逻辑未能确定用户/结果，则返回备用错误
                 _logger.error("表单处理完成，但未能确定用户或结果。OpenID: %s", openid[:6])
                 return self._error_response("处理您的信息时发生意外错误。")
-
-        except Exception as e:
-            _logger.exception("表单提交处理器中发生未处理的异常。")
-            return self._error_response(f"发生意外的系统错误: {str(e)}")
 
     # --- 准备档案数据的助手 ---
     def _prepare_profile_vals(self, wechat_user_session_data, user_id, openid, wish):
