@@ -376,7 +376,7 @@ class WechatAuthController(http.Controller):
         return {
             'user_id': user_id,
             'openid': openid,
-            'unionid': wechat_user_session_data.get('unionid'),  # Store unionid if available
+            # 'unionid': wechat_user_session_data.get('unionid'),  # Store unionid if available
             'nickname': wechat_user_session_data.get('nickname'),
             'sex': str(wechat_user_session_data.get('sex', 0)),  # Store as string if model field is Char
             'city': wechat_user_session_data.get('city', ''),
