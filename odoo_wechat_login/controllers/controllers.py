@@ -8,7 +8,7 @@ import simplejson
 import requests
 import werkzeug.utils
 from odoo import http
-from datetime import datetime
+from datetime import datetime, timedelta
 from odoo.http import request
 from werkzeug.urls import url_encode
 from werkzeug.exceptions import BadRequest
@@ -224,6 +224,7 @@ class WechatAuthController(http.Controller):
             user_to_process = None
             outcome = None
             success_msg = ""  # 成功消息
+            update_info_msg = ""
 
             # --- 逻辑步骤 1: 通过 wechat.user.profile 检查 OpenID ---
             existing_profile = request.env['wechat.user.profile'].sudo().search([
@@ -236,8 +237,16 @@ class WechatAuthController(http.Controller):
                 user_to_process = existing_profile.user_id
                 outcome = 'existing'  # 结果为 '现有'
                 success_msg = f"欢迎回来, {user_to_process.name}! 您的信息已注册。"
-                # 可选: 如果 wechat_user 中的昵称/头像等已更改，则更新档案？
-                # existing_profile.sudo().write({'nickname': wechat_user.get('nickname'), ...})
+
+                # 检查数据差异
+                if user_to_process.login != email:
+                    update_info_msg += f"\n您提交的邮箱 ({email}) 与记录 ({user_to_process.login}) 不同。"
+                if user_to_process.partner_id.phone != phone:
+                    update_info_msg += f"\n您提交的电话 ({phone}) 与记录 ({user_to_process.partner_id.phone or '无'}) 不同。"
+                # ** 此处可添加更新逻辑和限制检查 (当前版本仅提示) **
+                # if update_info_msg:
+                #    # check last_update_date, if allowed: user_to_process.partner_id.write(...) etc.
+                #    pass
 
             # --- 逻辑步骤 2: 通过 res.users 检查 Email (如果 OpenID 不匹配) ---
             elif not user_to_process:  # 仅当步骤 1 未找到用户时继续
@@ -250,6 +259,11 @@ class WechatAuthController(http.Controller):
                         f"通过 email {email} 找到现有用户 ID: {existing_user.id}。OpenID {openid[:6]} 尚未链接。现在绑定。结果: existing。")
                     user_to_process = existing_user
                     outcome = 'existing'  # 或 'linked' (如果你希望区分)
+
+                    # 检查数据差异 (主要检查电话，因为邮箱是匹配上的)
+                    if user_to_process.partner_id.phone != phone:
+                         update_info_msg += f"\n您提交的电话 ({phone}) 与记录 ({user_to_process.partner_id.phone or '无'}) 不同。"
+                    # ** 此处可添加更新逻辑和限制检查 (当前版本仅提示) **
 
                     # ** 关键操作：创建档案以绑定微信 **
                     try:
@@ -316,60 +330,93 @@ class WechatAuthController(http.Controller):
 
             # --- 后续处理: 登录、发送消息、重定向 ---
             if user_to_process and outcome:
-                # ** 重要操作：为 user_to_process 实现 Odoo 登录 **
-                # 这部分对用户体验至关重要，但很大程度上取决于你的 Odoo 设置
-                # (auth_oauth 助手、密码处理、session 管理)。
-                # 使用 session authenticate 的示例 (需要密码或替代认证):
-                # try:
-                #     request.session.authenticate(request.env.cr.dbname, user_to_process.login, 'PASSWORD_PLACEHOLDER')
-                #     _logger.info(f"用户 {user_to_process.login} 已成功认证到 Odoo session。")
-                # except Exception as auth_err:
-                #     _logger.error(f"创建/绑定后认证用户 {user_to_process.login} 失败: {auth_err}")
-                #     # 决定这是否关键 - 也许无论如何都重定向？
-
-                # 发送微信确认消息 (带频率限制)
+                # 发送微信确认消息 (带尝试次数限制和10分钟重置)
+                message_blocked_flag = False  # Flag to pass to template if blocked
                 if success_msg:  # 仅当准备了消息时发送
-                    # 从 session 获取当前尝试次数，如果不存在则默认为 0
-                    send_attempts = request.session.get('wechat_msg_send_attempts', 0)
+                    now = datetime.now()
+                    # 从 session 获取尝试信息 (字典)，如果不存在则初始化
+                    attempt_info = request.session.get('wechat_msg_attempt_info',
+                                                       {'attempts': 0, 'last_attempt_time': None})
+                    attempts = attempt_info.get('attempts', 0)
+                    last_attempt_time = attempt_info.get('last_attempt_time')  # Might be None or datetime object
 
-                    if send_attempts < 3:
-                        _logger.info(f"准备发送微信消息 (尝试次数 {send_attempts + 1}/3) 给 OpenID {openid[:6]}...")
+                    can_send = True
+                    reset_occurred = False
 
-                        # 在尝试发送 *之前* 立即增加 session 中的尝试次数计数器
-                        request.session['wechat_msg_send_attempts'] = send_attempts + 1
+                    if attempts >= 3:
+                        # 检查自上次尝试以来是否已过去10分钟
+                        if isinstance(last_attempt_time, datetime) and (now - last_attempt_time) > timedelta(
+                                minutes=10):
+                            _logger.info(f"OpenID {openid[:6]} 的微信消息发送尝试次数已超过10分钟冷却期，重置计数器。")
+                            attempts = 0  # 重置计数器
+                            last_attempt_time = None  # 清除上次尝试时间
+                            reset_occurred = True  # 标记已重置
+                            can_send = True
+                        else:
+                            # 仍在10分钟冷却期内
+                            can_send = False
+                            message_blocked_flag = True  # 标记消息被阻止，以便通知用户
+                            _logger.warning(
+                                f"OpenID {openid[:6]} 的微信消息发送尝试次数已达上限 (3次) 且仍在10分钟冷却期内。消息未发送。")
 
-                        # 调用静态方法尝试发送
+                    if can_send:
+                        current_attempt_number = attempts + 1
+                        _logger.info(
+                            f"准备发送微信消息 (尝试次数 {current_attempt_number}/3) 给 OpenID {openid[:6]}...")
+
+                        # 尝试发送消息
                         send_status = WechatAuthController.send_wechat_message(openid, success_msg, config['appid'],
                                                                                config['secret'])
 
+                        # 更新 session 中的尝试信息
+                        request.session['wechat_msg_attempt_info'] = {
+                            'attempts': current_attempt_number,
+                            'last_attempt_time': now  # 记录本次尝试的时间
+                        }
+
                         if send_status:
-                            _logger.info(f"微信消息在第 {send_attempts + 1} 次尝试时成功发送。")
-                            # 可选：如果希望每次成功都重置计数器（对于欢迎消息可能不需要）
-                            # request.session['wechat_msg_send_attempts'] = 0
+                            _logger.info(f"微信消息在第 {current_attempt_number} 次尝试时成功发送。")
+                            # 成功后可以选择重置计数器，如果需要的话
+                            # request.session['wechat_msg_attempt_info'] = {'attempts': 0, 'last_attempt_time': None}
                         else:
                             # 记录发送失败，但流程继续
                             _logger.error(
-                                f"在第 {send_attempts + 1} 次尝试时未能为 OpenID {openid[:6]} 发送微信确认消息...")
-                            # 注意：即使发送失败，我们仍然会重定向到成功页面
+                                f"在第 {current_attempt_number} 次尝试时未能为 OpenID {openid[:6]} 发送微信确认消息...")
+                            # 如果是第一次尝试失败（重置后），也可能触发冷却
+                            if reset_occurred:
+                                message_blocked_flag = True  # 标记为阻止，因为即使重置后第一次尝试也失败了
 
-                    else:
-                        # 已达到尝试次数限制
-                        _logger.warning(
-                            f"当前会话中 OpenID {openid[:6]} 的微信消息发送尝试次数已达上限 (3次)。消息未发送。")
-                        # 此处不发送消息，但注册/绑定仍然是成功的，将重定向到成功页面
+                    # else: # can_send is False (already logged the warning)
+                    # pass # Do nothing, message sending is skipped
 
-                    # 重定向到成功页面
+                # 重定向到成功页面 (可能附带 msg_blocked 标志)
                 redirect_url = '/success?outcome=%s&user_name=%s&phone=%s' % (
                     outcome,
                     werkzeug.utils.url_quote(user_to_process.name or '用户'),  # 确保 name 存在
                     werkzeug.utils.url_quote(user_to_process.phone or '')  # 确保 phone 存在
                 )
+                # 如果消息被阻止，添加参数到 URL
+                if message_blocked_flag:
+                    redirect_url += '&msg_blocked=1'
+                if wish:  # Add wish to redirect URL if it exists
+                    redirect_url += f'&wish={werkzeug.utils.url_quote(wish)}'
+                    # Add submitted data if different for display on success page
+                if update_info_msg:
+                    redirect_url += f'&submitted_email={werkzeug.utils.url_quote(email)}'
+                    redirect_url += f'&submitted_phone={werkzeug.utils.url_quote(phone)}'
+                    redirect_url += f'&stored_email={werkzeug.utils.url_quote(user_to_process.login)}'
+                    redirect_url += f'&stored_phone={werkzeug.utils.url_quote(user_to_process.partner_id.phone or "")}'
+
                 _logger.info(f"OpenID {openid[:6]} 处理完成。正在重定向到: {redirect_url}")
                 return request.redirect(redirect_url)
             else:
                 # 如果逻辑未能确定用户/结果，则返回备用错误
                 _logger.error("表单处理完成，但未能确定用户或结果。OpenID: %s", openid[:6])
                 return self._error_response("处理您的信息时发生意外错误。")
+
+        except Exception as e: # <--- This except corresponds to the main try block
+            _logger.exception("表单提交处理器中发生未处理的异常。")
+            return self._error_response(f"发生意外的系统错误: {str(e)}")
 
     # --- 准备档案数据的助手 ---
     def _prepare_profile_vals(self, wechat_user_session_data, user_id, openid, wish):
@@ -389,12 +436,6 @@ class WechatAuthController(http.Controller):
             'raw_data': simplejson.dumps(wechat_user_session_data),  # 存储所有原始数据
             'wish': wish,  # 存储表单中的愿望
         }
-        # 可选: 仅当 unionid 存在于 session 数据中且你打算稍后添加该字段时，才条件性地添加 unionid
-        # if 'unionid' in wechat_user_session_data and wechat_user_session_data['unionid']:
-        #    # 如果你稍后向模型添加 'unionid' 字段，可以取消注释此行
-        #    # vals['unionid'] = wechat_user_session_data['unionid']
-        #    pass # 目前不对 unionid 做任何处理
-
         return vals
 
     # --- 微信消息发送 (静态方法) ---
