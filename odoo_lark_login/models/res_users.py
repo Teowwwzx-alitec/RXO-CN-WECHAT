@@ -1,13 +1,12 @@
 # -*- coding: utf-8 -*-
 
 import logging
-
 import requests
-import base64
 import simplejson
 from werkzeug.urls import url_encode
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessDenied, ValidationError
+
 
 _logger = logging.getLogger(__name__)
 

@@ -1,20 +1,17 @@
 # -*- coding: utf-8 -*-
 
-import base64
 import logging
-from odoo.http import request
-import hashlib
-
-import simplejson
 import requests
+import simplejson
 import werkzeug.utils
-from werkzeug.exceptions import BadRequest
-from werkzeug.urls import url_encode
 
 from odoo import http
+from odoo.http import request
+from werkzeug.urls import url_encode
+from werkzeug.exceptions import BadRequest
 from odoo.exceptions import AccessDenied, ValidationError
-from odoo.addons.auth_oauth.controllers.main import OAuthController as BaseController
 from odoo.addons.auth_oauth.controllers.main import OAuthLogin as BaseOAuthLogin
+from odoo.addons.auth_oauth.controllers.main import OAuthController as BaseController
 
 
 _logger = logging.getLogger(__name__)
@@ -153,21 +150,3 @@ class OAuthController(BaseController):
         # _logger.info("Successfully bound user %s to open_id %s", user.id, open_id)
 
         return werkzeug.utils.redirect("/web")
-
-        # Bind the user by writing the openid into the user record
-        # user.sudo().write({"openid": open_id})
-        # _logger.info("Successfully bound user %s to open_id %s", user.id, open_id)
-        #
-        # # Verify that the openid is indeed recorded in the database
-        # updated_user = request.env["res.users"].sudo().browse(user.id)
-        # if updated_user.openid != open_id:
-        #     _logger.error("Failed to record openid for user %s", user.id)
-        #     return request.render('odoo_lark_login.lark_bind_failure', {
-        #         'message': 'Failed to record Lark open_id.'
-        #     })
-        #
-        # # Render a success page indicating binding was successful
-        # return request.render('odoo_lark_login.lark_bind_success', {
-        #     'open_id': open_id
-        # })
-
