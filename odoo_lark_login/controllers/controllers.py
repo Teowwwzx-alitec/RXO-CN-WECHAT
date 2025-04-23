@@ -45,8 +45,8 @@ class OAuthLogin(BaseOAuthLogin):
                 provider["auth_link"] = "%s?%s" % (provider["auth_endpoint"], url_encode(params))
         return providers
 
-
 class OAuthController(BaseController):
+    # Core function
     @http.route("/lark/login", type="http", auth="none")
     def lark_login(self, **kw):
         try:
@@ -66,10 +66,12 @@ class OAuthController(BaseController):
             "token_type": "Bearer",
             "state": simplejson.dumps(state),
         }
+        # Redirect to the function in res_users.py
         return werkzeug.utils.redirect(
             redirect_uri + "auth_oauth/signin?%s" % url_encode(params)
         )
 
+    # Bind function
     @http.route("/lark/bind", type="http", auth="none")
     def bind_to_lark(self, **kw):
         try:
@@ -93,6 +95,7 @@ class OAuthController(BaseController):
             redirect_uri + "lark/bind/write?%s" % url_encode(params)
         )
 
+    # Bind function
     @http.route("/lark/bind/write", type="http", auth="none")
     def bind_to_lark_write(self, **kw):
 
@@ -140,7 +143,6 @@ class OAuthController(BaseController):
                 % (dict_data.get("code"), dict_data.get("msg"))
             )
 
-        # On success, 'data' should have an 'open_id'
         token_data = dict_data.get("data", {})
         open_id = token_data.get("open_id")
         if not open_id:

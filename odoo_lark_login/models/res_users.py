@@ -37,8 +37,8 @@ class ResUsers(models.Model):
         base_url = self.env["ir.config_parameter"].sudo().get_param("web.base.url")
 
         state = {
-            "u": self.id,  # Current user's ID.
-            "d": self.env.cr.dbname,  # Current database name.
+            "u": self.id,
+            "d": self.env.cr.dbname,
             "redirect_uri": base_url + "/",
         }
 
