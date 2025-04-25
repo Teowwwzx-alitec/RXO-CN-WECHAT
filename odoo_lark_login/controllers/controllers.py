@@ -5,7 +5,7 @@ import requests
 import simplejson
 import werkzeug.utils
 
-from odoo import http
+from odoo import http, _
 from odoo.http import request
 from werkzeug.urls import url_encode
 from werkzeug.exceptions import BadRequest
@@ -152,3 +152,80 @@ class OAuthController(BaseController):
         # _logger.info("Successfully bound user %s to open_id %s", user.id, open_id)
 
         return werkzeug.utils.redirect("/web")
+
+    @http.route('/lark/go', type='http', auth="none", sitemap=False)
+    def lark_start_sso(self, **kwargs):
+        """
+        Initiates the Lark SSO flow immediately by reading the configured
+        Lark OAuth provider settings and redirecting the user to Lark.
+        """
+        try:
+            # 1. Determine Database
+            dbname = request.session.db or http.db_list()[0]
+            if not http.db_filter([dbname]):
+                return request.redirect('/web/login?lark_error=db_invalid')
+
+            # 2. Get Expected Client ID from System Parameters
+            expected_client_id = request.env['ir.config_parameter'].sudo().get_param('odoo_lark_login.appid')
+            if not expected_client_id:
+                 _logger.error("Lark App ID (Client ID) not configured in system parameters (odoo_lark_login.appid).")
+                 return request.redirect('/web/login?lark_error=appid_config')
+
+            # 3. Find the Enabled Lark Provider by Client ID
+            Provider = request.env['auth.oauth.provider'].sudo()
+            lark_provider = Provider.search([
+                ('client_id', '=', expected_client_id),
+                ('enabled', '=', True) # Make sure it's the active one
+            ], limit=1)
+
+            if not lark_provider:
+                _logger.error(_("Enabled Lark OAuth provider with Client ID '%s' not found. Please configure it under Settings > Users & Companies > OAuth Providers.") % expected_client_id)
+                # Use translated message for user
+                return request.redirect(f'/web/login?error={_("Lark login is not configured correctly.")}')
+
+            # --- Now use the dynamically found lark_provider record ---
+
+            # 4. Prepare State
+            return_url = request.httprequest.url_root
+            # Use the ID found dynamically
+            state_dict = { "d": dbname, "p": lark_provider.id, "r": url_encode({"redirect": return_url}) }
+            state = simplejson.dumps(state_dict)
+
+            # 5. Get Params from the Found Provider Record
+            client_id = lark_provider.client_id # Should match expected_client_id
+            auth_endpoint = lark_provider.auth_endpoint
+            scope = lark_provider.scope # Read the scope directly from the provider config
+
+            # Basic check for essential provider fields
+            if not all([auth_endpoint, scope]):
+                 _logger.error("Lark OAuth provider (ID: %s) is missing configuration (Authorization URL or Scope).", lark_provider.id)
+                 return request.redirect(f'/web/login?error={_("Lark login configuration is incomplete.")}')
+
+             # **Important Scope Check (Add this log)**
+            if 'lark_login' in scope and not ('authen:user.info' in scope):
+                 _logger.warning("Lark OAuth provider (ID: %s) scope ('%s') might be insufficient. Standard scopes like 'authen:user.info' are usually required.", lark_provider.id, scope)
+
+
+            # 6. Get Odoo Callback URL from System Parameter
+            redirect_uri = request.env['ir.config_parameter'].sudo().get_param('odoo_lark_login.return_url')
+            if not redirect_uri:
+                 _logger.error("Lark return URL (odoo_lark_login.return_url) not configured in parameters.")
+                 return request.redirect(f'/web/login?error={_("Lark login callback URL is not configured.")}')
+
+            # 7. Construct Lark Auth URL
+            params = {
+                "response_type": "code",
+                "app_id": client_id,
+                "redirect_uri": redirect_uri,
+                "scope": scope, # Use scope defined in the provider settings
+                "state": state,
+            }
+            lark_auth_url = f"{auth_endpoint}?{url_encode(params)}"
+            _logger.info("Redirecting user to Lark via /lark/go...") # Removed URL from log for slight security
+
+            # 8. Redirect User
+            return werkzeug.utils.redirect(lark_auth_url, 302)
+
+        except Exception as e:
+            _logger.exception("Error initiating Lark SSO flow via /lark/go.")
+            return request.redirect(f'/web/login?error={_("An unexpected error occurred during login.")}')
