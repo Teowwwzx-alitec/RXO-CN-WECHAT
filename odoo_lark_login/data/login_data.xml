@@ -1,66 +1,21 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
-    <!-- Use noupdate="1" to prevent overriding user changes on module update, -->
-    <!-- but ensure it gets created if missing. -->
     <data noupdate="1">
-
-        <!-- Lark OAuth Provider Configuration -->
-        <record id="provider_lark" model="auth.oauth.provider">
-            <!-- User-visible Name -->
-            <field name="name">Lark Login</field> <!-- Changed to English for broader understanding, user can rename -->
-
-            <!-- IMPORTANT: Client ID must be set by the user later -->
-            <field name="client_id">PLEASE_CONFIGURE_LARK_CLIENT_ID</field> <!-- Clear placeholder -->
-
-            <!-- Enable by default -->
+        <!-- 飞书登录参数 -->
+        <record id="lark_login" model="auth.oauth.provider">
+            <field name="name">飞书扫码登录</field>
+            <field name="client_id">请替换AppID</field>
             <field name="enabled" eval="True"/>
-
-            <!-- Text displayed on the button -->
-            <field name="body">Sign in with Lark</field> <!-- Changed to English -->
-
-            <!-- ** Use a UNIQUE class for custom CSS ** -->
-            <field name="css_class">o_auth_lark_icon</field> <!-- Custom class, NOT FontAwesome -->
-
-            <!-- Lark Authorization Endpoint -->
+            <field name="body">飞书登录</field>
+            <field name="css_class">fa-solid fa-dove</field>
+            <!-- Lark OAuth 入口地址；请确认该地址是否与Lark开放平台的文档一致 -->
             <field name="auth_endpoint">https://open.larksuite.com/open-apis/authen/v1/index</field>
-
-            <!-- ** IMPORTANT: Default to correct scopes ** -->
-            <!-- Adjust scopes based on Lark's exact requirements -->
-            <field name="scope">authen:user.info contact:user.email.readonly</field>
-
-            <!-- Lark Token Endpoint (Used by Odoo as 'validation_endpoint') -->
-            <!-- Your custom code relies on this specific URL for detection -->
+            <!-- scope可根据实际需求调整 -->
+            <field name="scope">lark_login</field>
+            <!-- 验证/换取access_token的接口 -->
             <field name="validation_endpoint">https://open.larksuite.com/open-apis/authen/v1/access_token</field>
-
-            <!-- Odoo's standard UserInfo URL field (matches validation_endpoint for Lark in your custom setup) -->
-            <!-- Re-using validation_endpoint here matches how your custom code identifies the provider -->
-            <field name="userinfo_endpoint">https://open.larksuite.com/open-apis/authen/v1/access_token</field>
-
-            <!-- Data Endpoint (Not typically used for OAuth2 like this) -->
-            <field name="data_endpoint"></field> <!-- Keep empty -->
+            <!-- 如果需要调用用户信息接口，可以设置data_endpoint；否则留空 -->
+            <field name="data_endpoint"></field>
         </record>
-
     </data>
 </odoo>
-
-        <!--<?xml version="1.0" encoding="UTF-8" ?>-->
-<!--<odoo>-->
-<!--    <data noupdate="1">-->
-<!--        &lt;!&ndash; 飞书登录参数 &ndash;&gt;-->
-<!--        <record id="lark_login" model="auth.oauth.provider">-->
-<!--            <field name="name">飞书扫码登录</field>-->
-<!--            <field name="client_id">请替换AppID</field>-->
-<!--            <field name="enabled" eval="True"/>-->
-<!--            <field name="body">飞书登录</field>-->
-<!--            <field name="css_class">fa-solid fa-dove</field>-->
-<!--            &lt;!&ndash; Lark OAuth 入口地址；请确认该地址是否与Lark开放平台的文档一致 &ndash;&gt;-->
-<!--            <field name="auth_endpoint">https://open.larksuite.com/open-apis/authen/v1/index</field>-->
-<!--            &lt;!&ndash; scope可根据实际需求调整 &ndash;&gt;-->
-<!--            <field name="scope">lark_login</field>-->
-<!--            &lt;!&ndash; 验证/换取access_token的接口 &ndash;&gt;-->
-<!--            <field name="validation_endpoint">https://open.larksuite.com/open-apis/authen/v1/access_token</field>-->
-<!--            &lt;!&ndash; 如果需要调用用户信息接口，可以设置data_endpoint；否则留空 &ndash;&gt;-->
-<!--            <field name="data_endpoint"></field>-->
-<!--        </record>-->
-<!--    </data>-->
-<!--</odoo>-->
