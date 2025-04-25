@@ -159,6 +159,7 @@ class OAuthController(BaseController):
         Initiates the Lark SSO flow immediately by reading the configured
         Lark OAuth provider settings and redirecting the user to Lark.
         """
+        _logger.info("Initiating Lark SSO flow via /lark/go...")
         try:
             # 1. Determine Database
             dbname = request.session.db or http.db_list()[0]
