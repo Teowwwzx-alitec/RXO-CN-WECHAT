@@ -148,7 +148,12 @@ class ResUsers(models.Model):
         if not open_id:
             raise AccessDenied("飞书返回的用户信息中没有 open_id")
 
-        email = user_data.get("email")
+        # email = user_data.get("email")
+        # if not email:
+        #     email = get_user_email(lark_access_token, open_id)
+
+        email = user_data.get("enterprise_email")
+        _logger.info(f"<BIS> email: {email}")
         if not email:
             email = get_user_email(lark_access_token, open_id)
 
