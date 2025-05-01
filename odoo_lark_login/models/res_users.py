@@ -129,41 +129,40 @@ class ResUsers(models.Model):
                 response = requests.get(url, headers=headers, timeout=10)
                 response.raise_for_status()
                 email_res = response.json()
-                _logger.info(f"Contact API: Raw response for open_id {open_id[:6]}: {email_res}")
 
                 if email_res.get("code") == 0:
                     user_contact_data = email_res.get("data", {}).get("user", {})
                     if not user_contact_data:
-                        _logger.warning(f"Contact API: Response missing 'user' data for open_id {open_id[:6]}.")
+                        # _logger.warning(f"Contact API: Response missing 'user' data for open_id {open_id[:6]}.")
                         return None
 
                     business_email = user_contact_data.get("enterprise_email")
-                    standard_email = user_contact_data.get("email")
+                    # standard_email = user_contact_data.get("email")
 
-                    _logger.info(f"Contact API: Found 'enterprise_email': {business_email}")
-                    _logger.info(f"Contact API: Found standard 'email'   : {standard_email}")
+                    # _logger.info(f"Contact API: Found 'enterprise_email': {business_email}")
+                    # _logger.info(f"Contact API: Found standard 'email'   : {standard_email}")
 
                     if business_email:
                         _logger.info("Contact API: Returning 'enterprise_email'.")
                         return business_email
-                    elif standard_email:
-                        _logger.info("Contact API: Returning standard 'email' as fallback.")
-                        return standard_email
+                    # elif standard_email:
+                    #     _logger.info("Contact API: Returning standard 'email' as fallback.")
+                    #     return standard_email
                     else:
-                        _logger.warning(
-                            f"Contact API: Neither enterprise nor standard email found for open_id {open_id[:6]}.")
+                        # _logger.warning(
+                        #     f"Contact API: Neither enterprise nor standard email found for open_id {open_id[:6]}.")
                         return None
                 else:
-                    _logger.error(
-                        "Contact API: Request failed. Code: %s, Msg: %s",
-                        email_res.get("code"), email_res.get("msg")
-                    )
+                    # _logger.error(
+                    #     "Contact API: Request failed. Code: %s, Msg: %s",
+                    #     email_res.get("code"), email_res.get("msg")
+                    # )
                     return None
             except requests.exceptions.RequestException as e:
-                _logger.error(f"Contact API: Network error for open_id {open_id[:6]}: {e}", exc_info=True)
+                # _logger.error(f"Contact API: Network error for open_id {open_id[:6]}: {e}", exc_info=True)
                 return None
             except Exception as e:
-                _logger.exception(f"Contact API: Unexpected error for open_id {open_id[:6]}.")
+                # _logger.exception(f"Contact API: Unexpected error for open_id {open_id[:6]}.")
                 return None
 
         code = params.get("access_token") or params.get("code")
@@ -181,21 +180,19 @@ class ResUsers(models.Model):
         if not open_id:
             raise AccessDenied("飞书返回的用户信息中没有 open_id")
 
-        _logger.info(f"Basic user info from /authen/v1/user_info: {user_data}")
-        standard_email_from_basic = user_data.get("email")
-        _logger.info(f"Standard email found in basic info (for logging only): {standard_email_from_basic}")
-
+        # _logger.info(f"Basic user info from /authen/v1/user_info: {user_data}")
+        # standard_email_from_basic = user_data.get("email")
+        # _logger.info(f"Standard email found in basic info (for logging only): {standard_email_from_basic}")
 
         email = get_user_email(lark_access_token, open_id)
-        _logger.info(f"Email determined for processing (prioritizing enterprise): {email}")
-
+        # _logger.info(f"Email determined for processing (prioritizing enterprise): {email}")
 
         # email = user_data.get("email")
         # if not email:
         #     email = get_user_email(lark_access_token, open_id)
 
         if not email:
-            _logger.error(f"Could not determine any email for open_id {open_id[:6]} from Contact API.")
+            # _logger.error(f"Could not determine any email for open_id {open_id[:6]} from Contact API.")
             raise AccessDenied("无法从飞书获取用户的邮箱信息")
 
         user = self.sudo().search([("openid", "=", open_id)], limit=1)
