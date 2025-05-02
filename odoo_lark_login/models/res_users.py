@@ -190,7 +190,6 @@ class ResUsers(models.Model):
                         _logger.info("Contact API: Returning 'enterprise_email'.")
                         return business_email
                     elif standard_email:
-                        # Allow fallback to standard email if business email is not present
                         _logger.info("Contact API: Returning standard 'email' as fallback.")
                         return standard_email
                     else:
