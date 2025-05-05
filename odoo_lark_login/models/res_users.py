@@ -247,11 +247,11 @@ class ResUsers(models.Model):
                     user = self.sudo().create({
                         'name': user_data.get("name", f"Lark User {open_id[:6]}"),
                         'login': email_to_use,
-                        'email': email_to_use,
+                        # 'email': email_to_use,
                         'openid': open_id,
                         'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])],
-                        'oauth_provider_id': provider.id,
-                        'oauth_uid': open_id,
+                        # 'oauth_provider_id': provider.id,
+                        # 'oauth_uid': open_id,
                         # 'oauth_access_token': lark_access_token,
                         'active': True,
                     })
@@ -264,10 +264,10 @@ class ResUsers(models.Model):
                 _logger.info(
                     f"Found existing user ID {user.id} by login '{email_to_use}'. Linking open_id {open_id[:6]}.")
                 try:
-                    user.sudo().write({
+                    user.write({
                         "openid": open_id,
-                        "oauth_provider_id": provider.id,
-                        "oauth_uid": open_id,
+                        # "oauth_provider_id": provider.id,
+                        # "oauth_uid": open_id,
                     })
                     _logger.info(f"Successfully linked existing user ID {user.id} to open_id {open_id[:6]}.")
                 except Exception as e_write:
@@ -277,9 +277,11 @@ class ResUsers(models.Model):
             _logger.info(f"Found user ID {user.id} by openid {open_id[:6]}. Proceeding to login.")
             if not user.oauth_provider_id or not user.oauth_uid:
                  _logger.info(f"Populating missing OAuth fields for user ID {user.id}.")
-                 user.sudo().write({
-                     "oauth_provider_id": provider.id,
-                     "oauth_uid": open_id,
+                 user.write({
+                     "openid": open_id,
+
+                     # "oauth_provider_id": provider.id,
+                     # "oauth_uid": open_id,
                  })
 
         if not user:
