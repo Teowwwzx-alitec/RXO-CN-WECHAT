@@ -226,18 +226,16 @@ class ResUsers(models.Model):
         _logger.info(f"Searching for existing user by openid: {open_id[:6]}...")
         user = self.sudo().search([("openid", "=", open_id)], limit=1)
 
+        email_to_use = email
+
+
         if not user:
             _logger.info("User not found by openid.")
-            email_from_basic_info = user_data.get("email")
-            _logger.warning(
-                f"FLAW WARNING: Now using standard 'email' from basic info ('{email_from_basic_info}') for search/create, NOT necessarily the prioritized email ('{email}').")
-
-            if email_from_basic_info:
-                _logger.info(f"Searching user by login = '{email_from_basic_info}'...")
-                user = self.sudo().search([("login", "=", email_from_basic_info)], limit=1)
+            if email_to_use:  # Check if we actually got an email
+                user = self.sudo().search([("login", "=", email_to_use)], limit=1)
 
             if not user:
-                login_value = email_from_basic_info or f"lark_{open_id}@alitec.asia"
+                login_value = email_to_use
                 _logger.info(f"User not found by login. Creating new user with login='{login_value}'...")
                 try:
                     user = self.sudo().create({
@@ -246,7 +244,6 @@ class ResUsers(models.Model):
                         'email': login_value,
                         'openid': open_id,
                         'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])],
-                        # Add standard OAuth fields
                         'oauth_provider_id': provider.id,
                         'oauth_uid': open_id,
                         'oauth_access_token': lark_access_token,
@@ -258,7 +255,7 @@ class ResUsers(models.Model):
                     raise AccessDenied(f"Failed to create Odoo user account: {e_create}")
             else:
                 _logger.info(
-                    f"Found user ID {user.id} by login '{email_from_basic_info}'. Linking openid {open_id[:6]}.")
+                    f"Found user ID {user.id} by login '{email_to_use}'. Linking openid {open_id[:6]}.")
                 user.write({"openid": open_id})
         else:
             _logger.info(f"Found user ID {user.id} by openid {open_id[:6]}.")
