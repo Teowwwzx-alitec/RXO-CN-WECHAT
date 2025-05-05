@@ -151,40 +151,47 @@ class ResUsers(models.Model):
                 _logger.info(f"Lark Contact API (/contact/v3/users) Raw Response: {simplejson.dumps(email_res)}")
 
                 if email_res.get("code") == 0:
-                    user_contact_data = email_res.get("data", {}).get("user", {})
-                    if not user_contact_data:
-                        _logger.warning(f"Contact API: Response 'data' field missing 'user' sub-key for open_id {open_id[:6]}. Will try getting email from 'data' directly.")
-                        contact_data = email_res.get("data", {})
-                        business_email = contact_data.get("enterprise_email")
-                        standard_email = contact_data.get("email")
-                    else:
-                        business_email = user_contact_data.get("enterprise_email")
-                        standard_email = user_contact_data.get("email")
+                    user_contact_data_list = email_res.get("data", {}).get("user", {})
+                    if not user_contact_data_list:
+                        _logger.warning(
+                            f"Contact API: Response 'data.items' is empty for open_id {open_id[:6]}. Check user_id_type or user_id.")
+                        return None
 
-                    # Log and return based on your previous preference (business > standard)
-                    _logger.info(f"Contact API: Found 'enterprise_email': {business_email}")
-                    _logger.info(f"Contact API: Found standard 'email'   : {standard_email}")
+                    user_contact_data = user_contact_data_list[0]  # Assume the first item is the user
 
-                    if business_email:
-                        _logger.info("Contact API: Returning 'enterprise_email'.")
-                        return business_email
-                    elif standard_email:
-                        _logger.info("Contact API: Returning standard 'email' as fallback.")
+                    standard_email = user_contact_data.get("email")
+                    business_email = user_contact_data.get("enterprise_email")
+
+                    # Log found emails for clarity before prioritizing
+                    _logger.info(
+                        f"Contact API for {open_id[:6]}: Found 'email' (work): {standard_email} | 'enterprise_email' (business): {business_email}")
+
+                    # --- Apply User's Desired Priority: email -> enterprise_email ---
+                    if standard_email:
+                        _logger.info("Contact API: Returning 'email' as prioritized.")
                         return standard_email
+                    elif business_email:
+                        _logger.info("Contact API: Returning 'enterprise_email' as fallback.")
+                        return business_email
                     else:
-                        _logger.warning(f"Contact API: Neither enterprise nor standard email found for open_id {open_id[:6]}.")
+                        _logger.warning(
+                            f"Contact API: Neither 'email' nor 'enterprise_email' found for open_id {open_id[:6]}.")
                         return None
                 else:
-                    _logger.error("Contact API: Request failed. Code: %s, Msg: %s", email_res.get("code"), email_res.get("msg"))
+                    _logger.error(
+                        "Contact API: Request failed. Code: %s, Msg: %s, Request ID: %s. Note: Insufficient scope is a common cause.",
+                        email_res.get("code"), email_res.get("msg"), email_res.get("request_id"))
+                    # Don't raise exception here, just return None, allowing login to proceed if open_id match works
                     return None
 
-            except requests.exceptions.RequestException as e:
-                _logger.error(f"Contact API: Network error for open_id {open_id[:6]}: {e}", exc_info=True)
+            except (requests.exceptions.RequestException, simplejson.JSONDecodeError) as e:
+                _logger.error(f"Contact API: Network or JSON error for open_id {open_id[:6]}: %s", e, exc_info=True)
                 return None
-
             except Exception as e:
                 _logger.exception(f"Contact API: Unexpected error for open_id {open_id[:6]}.")
                 return None
+
+        # --- Main auth_oauth_lark logic ---
 
         code = params.get("access_token") or params.get("code")
         if not code:
@@ -209,57 +216,62 @@ class ResUsers(models.Model):
         if not open_id:
             raise AccessDenied("飞书返回的用户信息中没有 open_id")
 
-        email = user_data.get("enterprise_email")
-        _logger.info(f"Attempting to use enterprise_email from basic info: {email}")
-        if not email:
-            _logger.info("Enterprise email not in basic info, calling Contact API helper...")
-            email = get_user_email(lark_access_token, open_id) # Helper logs raw response inside
+        email_to_use = get_user_email(lark_access_token, open_id)
+        _logger.info(f"Final email determined for processing (from Contact API): {email_to_use}")
 
-        _logger.info(f"Final email determined for processing: {email}")
+        # Check if a usable email was found. If not, we cannot proceed with login/creation.
+        if not email_to_use:
+            _logger.error(f"Could not determine any usable email for open_id {open_id[:6]} after calling Contact API.")
+            raise AccessDenied(_("Could not retrieve a usable email address from Lark."))
 
-        # Check if email was found
-        if not email:
-            _logger.error(f"Could not determine any usable email for open_id {open_id[:6]}.")
-            raise AccessDenied("无法从飞书获取用户的邮箱信息")
-
-        # --- User Lookup/Creation (Using your existing logic, including the flaw) ---
         _logger.info(f"Searching for existing user by openid: {open_id[:6]}...")
         user = self.sudo().search([("openid", "=", open_id)], limit=1)
 
-        email_to_use = email
-
-
         if not user:
-            _logger.info("User not found by openid.")
-            if email_to_use:  # Check if we actually got an email
+            _logger.info(f"User not found by openid {open_id[:6]}. Searching by login/email: {email_to_use}...")
+            if email_to_use:
                 user = self.sudo().search([("login", "=", email_to_use)], limit=1)
 
             if not user:
-                login_value = email_to_use
-                _logger.info(f"User not found by login. Creating new user with login='{login_value}'...")
+                _logger.info(f"User not found by login '{email_to_use}'. Creating new user...")
                 try:
                     user = self.sudo().create({
                         'name': user_data.get("name", f"Lark User {open_id[:6]}"),
-                        'login': login_value,
-                        'email': login_value,
+                        'login': email_to_use,
+                        'email': email_to_use,
                         'openid': open_id,
                         'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])],
                         'oauth_provider_id': provider.id,
                         'oauth_uid': open_id,
-                        'oauth_access_token': lark_access_token,
+                        # 'oauth_access_token': lark_access_token,
                         'active': True,
                     })
-                    _logger.info(f"Created new user ID {user.id} with login {login_value}")
+                    _logger.info(f"Created new Odoo user ID {user.id} with login '{email_to_use}' linked to open_id {open_id[:6]}.")
                 except Exception as e_create:
-                    _logger.exception(f"Failed to create user with login {login_value}")
-                    raise AccessDenied(f"Failed to create Odoo user account: {e_create}")
+                    _logger.exception(f"Failed to create user with login '{email_to_use}'.")
+                    raise AccessDenied(_("Failed to create Odoo user account: %s") % e_create)
+
             else:
                 _logger.info(
-                    f"Found user ID {user.id} by login '{email_to_use}'. Linking openid {open_id[:6]}.")
-                user.write({"openid": open_id})
+                    f"Found existing user ID {user.id} by login '{email_to_use}'. Linking open_id {open_id[:6]}.")
+                try:
+                    user.sudo().write({
+                        "openid": open_id,
+                        "oauth_provider_id": provider.id,
+                        "oauth_uid": open_id,
+                    })
+                    _logger.info(f"Successfully linked existing user ID {user.id} to open_id {open_id[:6]}.")
+                except Exception as e_write:
+                    _logger.exception(f"Failed to link user ID {user.id} to open_id {open_id[:6]}.")
+                    raise AccessDenied(_("Failed to link Odoo account to Lark account: %s") % e_write)
         else:
-            _logger.info(f"Found user ID {user.id} by openid {open_id[:6]}.")
-
+            _logger.info(f"Found user ID {user.id} by openid {open_id[:6]}. Proceeding to login.")
+            if not user.oauth_provider_id or not user.oauth_uid:
+                 _logger.info(f"Populating missing OAuth fields for user ID {user.id}.")
+                 user.sudo().write({
+                     "oauth_provider_id": provider.id,
+                     "oauth_uid": open_id,
+                 })
 
         if not user:  # Final check
             _logger.error(f"User record is unexpectedly missing after processing for open_id {open_id[:6]}")
