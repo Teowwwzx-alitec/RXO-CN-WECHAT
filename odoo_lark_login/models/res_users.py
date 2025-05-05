@@ -105,17 +105,6 @@ class ResUsers(models.Model):
                 _logger.exception(f"Error processing Lark Token response.")
                 raise AccessDenied(f"Error processing Lark token response: {e}")
 
-            # response = requests.post(token_url, json=payload, headers=headers)
-            # token_res = response.json()
-            # if token_res.get("code") == 0:
-            #     data = token_res.get("data", {})
-            #     return data.get("access_token"), data.get("expires_in")
-            # else:
-            #     raise AccessDenied(
-            #         "飞书获取access_token错误：code=%s, msg=%s"
-            #         % (token_res.get("code"), token_res.get("msg"))
-            #     )
-
         def get_user_info(access_token):
             headers = {
                 "Content-Type": "application/json",
@@ -140,16 +129,6 @@ class ResUsers(models.Model):
             except Exception as e:
                  _logger.exception(f"Error processing Lark User Info response.")
                  raise AccessDenied(f"Error processing Lark user info response: {e}")
-
-            # response = requests.get(user_info_url, headers=headers)
-            # user_res = response.json()
-            # if user_res.get("code") == 0:
-            #     return user_res.get("data", {})
-            # else:
-            #     raise AccessDenied(
-            #         "飞书获取用户信息错误：code=%s, msg=%s"
-            #         % (user_res.get("code"), user_res.get("msg"))
-            #     )
 
         def get_user_email(access_token, open_id):
             """
@@ -207,36 +186,6 @@ class ResUsers(models.Model):
                 _logger.exception(f"Contact API: Unexpected error for open_id {open_id[:6]}.")
                 return None
 
-
-            #         business_email = user_contact_data.get("enterprise_email")
-            #         # standard_email = user_contact_data.get("email")
-            #
-            #         # _logger.info(f"Contact API: Found 'enterprise_email': {business_email}")
-            #         # _logger.info(f"Contact API: Found standard 'email'   : {standard_email}")
-            #
-            #         if business_email:
-            #             _logger.info("Contact API: Returning 'enterprise_email'.")
-            #             return business_email
-            #         # elif standard_email:
-            #         #     _logger.info("Contact API: Returning standard 'email' as fallback.")
-            #         #     return standard_email
-            #         else:
-            #             # _logger.warning(
-            #             #     f"Contact API: Neither enterprise nor standard email found for open_id {open_id[:6]}.")
-            #             return None
-            #     else:
-            #         # _logger.error(
-            #         #     "Contact API: Request failed. Code: %s, Msg: %s",
-            #         #     email_res.get("code"), email_res.get("msg")
-            #         # )
-            #         return None
-            # except requests.exceptions.RequestException as e:
-            #     # _logger.error(f"Contact API: Network error for open_id {open_id[:6]}: {e}", exc_info=True)
-            #     return None
-            # except Exception as e:
-            #     # _logger.exception(f"Contact API: Unexpected error for open_id {open_id[:6]}.")
-            #     return None
-
         code = params.get("access_token") or params.get("code")
         if not code:
             _logger.error("Lark OAuth Error: Missing code parameter.")
@@ -288,7 +237,7 @@ class ResUsers(models.Model):
                 user = self.sudo().search([("login", "=", email_from_basic_info)], limit=1)
 
             if not user:
-                login_value = email_from_basic_info or f"lark_{open_id}@alitec.com"
+                login_value = email_from_basic_info or f"lark_{open_id}@alitec.asia"
                 _logger.info(f"User not found by login. Creating new user with login='{login_value}'...")
                 try:
                     user = self.sudo().create({
@@ -310,10 +259,10 @@ class ResUsers(models.Model):
             else:
                 _logger.info(
                     f"Found user ID {user.id} by login '{email_from_basic_info}'. Linking openid {open_id[:6]}.")
-                user.write({"openid": open_id, "oauth_access_token": lark_access_token})
+                user.write({"openid": open_id})
         else:
-            _logger.info(f"Found user ID {user.id} by openid {open_id[:6]}. Updating token.")
-            user.write({"oauth_access_token": lark_access_token})
+            _logger.info(f"Found user ID {user.id} by openid {open_id[:6]}.")
+
 
         if not user:  # Final check
             _logger.error(f"User record is unexpectedly missing after processing for open_id {open_id[:6]}")
@@ -323,45 +272,3 @@ class ResUsers(models.Model):
                      user.id, open_id)
 
         return self.env.cr.dbname, user.login, lark_access_token
-
-
-        # _logger.info(f"Basic user info from /authen/v1/user_info: {user_data}")
-        # standard_email_from_basic = user_data.get("email")
-        # _logger.info(f"Standard email found in basic info (for logging only): {standard_email_from_basic}")
-
-        # email = get_user_email(lark_access_token, open_id)
-        # _logger.info(f"Email determined for processing (prioritizing enterprise): {email}")
-
-        # email = user_data.get("email")
-        # if not email:
-        #     email = get_user_email(lark_access_token, open_id)
-
-        # if not email:
-        #     # _logger.error(f"Could not determine any email for open_id {open_id[:6]} from Contact API.")
-        #     raise AccessDenied("无法从飞书获取用户的邮箱信息")
-        #
-        # user = self.sudo().search([("openid", "=", open_id)], limit=1)
-        #
-        # if not user:
-        #     email = user_data.get("email")
-        #     if email:
-        #         user = self.sudo().search([("login", "=", email)], limit=1)
-        #     if not user:
-        #         user = self.sudo().create({
-        #             'name': user_data.get("name", "Lark User"),
-        #             'login': email,
-        #             'openid': open_id,
-        #             'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])],
-        #         })
-        #
-        # if not user:
-        #     raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
-        #
-        # user.write({
-        #     "openid": open_id,
-        #     "oauth_access_token": lark_access_token,
-        # })
-        #
-        # _logger.info("Successfully bound/updated user %s to open_id %s", user.id, open_id)
-        #
-        # return self.env.cr.dbname, user.login, lark_access_token
