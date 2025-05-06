@@ -199,7 +199,7 @@ class ResUsers(models.Model):
                     # "oauth_access_token": lark_access_token,
                 })
                 _logger.info("Final write executed for user %s, setting openid and oauth_access_token.", user.id)
-                _logger.info(f"Final write executed. Token (first 5 chars): {lark_access_token[:5]}")
+                _logger.info(f"Final write executed. Token (first 5 chars): {lark_access_token}")
             except Exception as e_final_write:
                 _logger.exception(f"Failed during final write for user ID {user.id}.")
                 raise AccessDenied(_("Failed to finalize user update: %s") % e_final_write)
