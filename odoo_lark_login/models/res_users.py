@@ -247,42 +247,54 @@ class ResUsers(models.Model):
                     user = self.sudo().create({
                         'name': user_data.get("name", f"Lark User {open_id[:6]}"),
                         'login': email_to_use,
-                        # 'email': email_to_use,
                         'openid': open_id,
                         'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])],
-                        # 'oauth_provider_id': provider.id,
-                        # 'oauth_uid': open_id,
-                        # 'oauth_access_token': lark_access_token,
-                        'active': True,
                     })
                     _logger.info(f"Created new Odoo user ID {user.id} with login '{email_to_use}' linked to open_id {open_id[:6]}.")
                 except Exception as e_create:
                     _logger.exception(f"Failed to create user with login '{email_to_use}'.")
                     raise AccessDenied(_("Failed to create Odoo user account: %s") % e_create)
 
-            else:
-                _logger.info(
-                    f"Found existing user ID {user.id} by login '{email_to_use}'. Linking open_id {open_id[:6]}.")
-                try:
-                    user.write({
-                        "openid": open_id,
-                        # "oauth_provider_id": provider.id,
-                        # "oauth_uid": open_id,
-                    })
-                    _logger.info(f"Successfully linked existing user ID {user.id} to open_id {open_id[:6]}.")
-                except Exception as e_write:
-                    _logger.exception(f"Failed to link user ID {user.id} to open_id {open_id[:6]}.")
-                    raise AccessDenied(_("Failed to link Odoo account to Lark account: %s") % e_write)
-        else:
-            _logger.info(f"Found user ID {user.id} by openid {open_id[:6]}. Proceeding to login.")
-            if not user.oauth_provider_id or not user.oauth_uid:
-                 _logger.info(f"Populating missing OAuth fields for user ID {user.id}.")
-                 user.write({
-                     "openid": open_id,
+        #     else:
+        #         _logger.info(
+        #             f"Found existing user ID {user.id} by login '{email_to_use}'. Linking open_id {open_id[:6]}.")
+        #         try:
+        #             user.write({
+        #                 "openid": open_id,
+        #                 # "oauth_provider_id": provider.id,
+        #                 # "oauth_uid": open_id,
+        #             })
+        #             _logger.info(f"Successfully linked existing user ID {user.id} to open_id {open_id[:6]}.")
+        #         except Exception as e_write:
+        #             _logger.exception(f"Failed to link user ID {user.id} to open_id {open_id[:6]}.")
+        #             raise AccessDenied(_("Failed to link Odoo account to Lark account: %s") % e_write)
+        # else:
+        #     _logger.info(f"Found user ID {user.id} by openid {open_id[:6]}. Proceeding to login.")
+        #     if not user.oauth_provider_id or not user.oauth_uid:
+        #          _logger.info(f"Populating missing OAuth fields for user ID {user.id}.")
+        #          user.write({
+        #              "openid": open_id,
+        #
+        #              # "oauth_provider_id": provider.id,
+        #              # "oauth_uid": open_id,
+        #          })
 
-                     # "oauth_provider_id": provider.id,
-                     # "oauth_uid": open_id,
-                 })
+        if user:  # Ensure we have a user before writing
+            try:
+                user.write({
+                    "openid": open_id,  # Previous code wrote this again
+                    "oauth_access_token": lark_access_token,  # Previous code wrote this
+                })
+                _logger.info("Final write executed for user %s, setting openid and oauth_access_token.", user.id)
+            except Exception as e_final_write:
+                _logger.exception(f"Failed during final write for user ID {user.id}.")
+                # Decide if this failure should block login. Previous code didn't have try/except here.
+                # Raising exception might be safer if this write is critical for the old flow.
+                raise AccessDenied(_("Failed to finalize user update: %s") % e_final_write)
+        else:
+            # This should ideally not be reached if the logic above worked
+            _logger.error(f"Cannot perform final write because user object is missing for open_id {open_id[:6]}.")
+
 
         if not user:
             _logger.error(f"User record is unexpectedly missing after processing for open_id {open_id[:6]}")
