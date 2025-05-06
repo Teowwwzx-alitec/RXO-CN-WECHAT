@@ -179,7 +179,7 @@ class ResUsers(models.Model):
             if not user:
                 _logger.info(f"User not found by login '{email_to_use}'. Creating new user...")
                 try:
-                    user = self.sudo().create({
+                    user = self.sudo().write({
                         'name': user_data.get("name", f"Lark User {open_id[:6]}"),
                         'login': email_to_use,
                         'openid': open_id,
@@ -190,9 +190,7 @@ class ResUsers(models.Model):
                 except Exception as e_create:
                     _logger.exception(f"Failed to create user with login '{email_to_use}'.")
                     raise AccessDenied(_("Failed to create Odoo user account: %s") % e_create)
-
-
-        if user:
+        else:
             try:
                 user.write({
                     "openid": open_id,
@@ -202,9 +200,7 @@ class ResUsers(models.Model):
             except Exception as e_final_write:
                 _logger.exception(f"Failed during final write for user ID {user.id}.")
                 raise AccessDenied(_("Failed to finalize user update: %s") % e_final_write)
-        else:
-            # This should ideally not be reached if the logic above worked
-            _logger.error(f"Cannot perform final write because user object is missing for open_id {open_id[:6]}.")
+
 
 
         if not user:
