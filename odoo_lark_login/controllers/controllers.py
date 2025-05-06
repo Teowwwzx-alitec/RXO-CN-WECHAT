@@ -39,7 +39,7 @@ class OAuthLogin(BaseOAuthLogin):
                     "response_type": "code",
                     "app_id": appid,
                     "redirect_uri": return_url,
-                    "scope": provider["scope"],
+                    # "scope": provider["scope"],
                     "state": simplejson.dumps(state),
                 }
                 provider["auth_link"] = "%s?%s" % (provider["auth_endpoint"], url_encode(params))
@@ -62,7 +62,7 @@ class OAuthController(BaseController):
         params = {
             "expires_in": 7200,
             "access_token": code,
-            "scope": "lark_login",
+            # "scope": "lark_login",
             "token_type": "Bearer",
             "state": simplejson.dumps(state),
         }
@@ -87,7 +87,7 @@ class OAuthController(BaseController):
         params = {
             "expires_in": 7200,
             "code": code,
-            "scope": "lark_login",
+            # "scope": "lark_login",
             "token_type": "Bearer",
             "state": simplejson.dumps(state),
         }
@@ -195,16 +195,16 @@ class OAuthController(BaseController):
             # 5. Get Params from the Found Provider Record
             client_id = lark_provider.client_id # Should match expected_client_id
             auth_endpoint = lark_provider.auth_endpoint
-            scope = lark_provider.scope # Read the scope directly from the provider config
-
-            # Basic check for essential provider fields
-            if not all([auth_endpoint, scope]):
-                 _logger.error("Lark OAuth provider (ID: %s) is missing configuration (Authorization URL or Scope).", lark_provider.id)
-                 return request.redirect(f'/web/login?error={_("Lark login configuration is incomplete.")}')
-
-             # **Important Scope Check (Add this log)**
-            if 'lark_login' in scope and not ('authen:user.info' in scope):
-                 _logger.warning("Lark OAuth provider (ID: %s) scope ('%s') might be insufficient. Standard scopes like 'authen:user.info' are usually required.", lark_provider.id, scope)
+            # scope = lark_provider.scope # Read the scope directly from the provider config
+            #
+            # # Basic check for essential provider fields
+            # if not all([auth_endpoint, scope]):
+            #      _logger.error("Lark OAuth provider (ID: %s) is missing configuration (Authorization URL or Scope).", lark_provider.id)
+            #      return request.redirect(f'/web/login?error={_("Lark login configuration is incomplete.")}')
+            #
+            #  # **Important Scope Check (Add this log)**
+            # if 'lark_login' in scope and not ('authen:user.info' in scope):
+            #      _logger.warning("Lark OAuth provider (ID: %s) scope ('%s') might be insufficient. Standard scopes like 'authen:user.info' are usually required.", lark_provider.id, scope)
 
 
             # 6. Get Odoo Callback URL from System Parameter
@@ -218,7 +218,7 @@ class OAuthController(BaseController):
                 "response_type": "code",
                 "app_id": client_id,
                 "redirect_uri": redirect_uri,
-                "scope": scope, # Use scope defined in the provider settings
+                # "scope": scope, # Use scope defined in the provider settings
                 "state": state,
             }
             lark_auth_url = f"{auth_endpoint}?{url_encode(params)}"

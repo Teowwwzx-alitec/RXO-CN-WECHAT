@@ -46,7 +46,7 @@ class ResUsers(models.Model):
             "response_type": "code",
             "app_id": app_id,
             "redirect_uri": bind_url,
-            "scope": "lark_login",
+            # "scope": "lark_login",
             "state": simplejson.dumps(state),
         }
         lark_auth_endpoint = "https://open.larksuite.com/open-apis/authen/v1/index"
@@ -279,11 +279,11 @@ class ResUsers(models.Model):
         #              # "oauth_uid": open_id,
         #          })
 
-        if user:  # Ensure we have a user before writing
+        if user:
             try:
                 user.write({
-                    "openid": open_id,  # Previous code wrote this again
-                    # "oauth_access_token": lark_access_token,  # Previous code wrote this
+                    "openid": open_id,
+                    # "oauth_access_token": lark_access_token,
                 })
                 _logger.info("Final write executed for user %s, setting openid and oauth_access_token.", user.id)
             except Exception as e_final_write:
