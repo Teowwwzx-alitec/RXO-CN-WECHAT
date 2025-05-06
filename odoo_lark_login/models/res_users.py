@@ -65,7 +65,7 @@ class ResUsers(models.Model):
         If the provider's validation_endpoint indicates a Lark provider, it calls the Lark-specific method.
         """
         oauth_provider = self.env["auth.oauth.provider"].browse(int(provider))
-        if "open-apis/authen/v1/access_token" in oauth_provider.validation_endpoint:
+        if "open-apis/authen/v1" in oauth_provider.validation_endpoint:
             return self.auth_oauth_lark(oauth_provider, params)
         else:
             return super(ResUsers, self).auth_oauth(provider, params)
@@ -90,7 +90,7 @@ class ResUsers(models.Model):
                 response = requests.post(token_url, json=payload, headers=headers, timeout=10)
                 response.raise_for_status() # Check for HTTP errors
                 token_res = response.json()
-                # >>> Log Raw Token Response <<<
+
                 _logger.info(f"Lark Token Endpoint Raw Response: {simplejson.dumps(token_res)}") # Use simplejson for consistency
                 if token_res.get("code") == 0:
                     data = token_res.get("data", {})
@@ -116,7 +116,7 @@ class ResUsers(models.Model):
                 response = requests.get(user_info_url, headers=headers, timeout=10)
                 response.raise_for_status()
                 user_res = response.json()
-                # >>> Log Raw User Info Response <<<
+
                 _logger.info(f"Lark User Info (/authen/v1/user_info) Raw Response: {simplejson.dumps(user_res)}")
                 if user_res.get("code") == 0:
                     return user_res.get("data", {})
@@ -130,68 +130,6 @@ class ResUsers(models.Model):
                  _logger.exception(f"Error processing Lark User Info response.")
                  raise AccessDenied(f"Error processing Lark user info response: {e}")
 
-        # def get_user_email(access_token, open_id):
-        #     """
-        #     Retrieve detailed user information (including email) from Lark's contact API.
-        #     Ensure that the OAuth scope includes permission to access contact information.
-        #     """
-        #     headers = {
-        #         "Content-Type": "application/json",
-        #         "Authorization": f"Bearer {access_token}",
-        #     }
-        #     url = "https://open.larksuite.com/open-apis/contact/v3/users?user_id_type=open_id&user_id={}".format(
-        #         open_id)
-        #
-        #     try:
-        #         response = requests.get(url, headers=headers, timeout=10)
-        #         response.raise_for_status()
-        #         email_res = response.json()
-        #
-        #         # >>> Log Raw Contact API Response <<<
-        #         _logger.info(f"Lark Contact API (/contact/v3/users) Raw Response: {simplejson.dumps(email_res)}")
-        #
-        #         if email_res.get("code") == 0:
-        #             user_contact_data_list = email_res.get("data", {}).get("user", {})
-        #             if not user_contact_data_list:
-        #                 _logger.warning(
-        #                     f"Contact API: Response 'data.items' is empty for open_id {open_id[:6]}. Check user_id_type or user_id.")
-        #                 return None
-        #
-        #             user_contact_data = user_contact_data_list[0]  # Assume the first item is the user
-        #
-        #             standard_email = user_contact_data.get("email")
-        #             business_email = user_contact_data.get("enterprise_email")
-        #
-        #             # Log found emails for clarity before prioritizing
-        #             _logger.info(
-        #                 f"Contact API for {open_id[:6]}: Found 'email' (work): {standard_email} | 'enterprise_email' (business): {business_email}")
-        #
-        #             # --- Apply User's Desired Priority: email -> enterprise_email ---
-        #             if standard_email:
-        #                 _logger.info("Contact API: Returning 'email' as prioritized.")
-        #                 return standard_email
-        #             elif business_email:
-        #                 _logger.info("Contact API: Returning 'enterprise_email' as fallback.")
-        #                 return business_email
-        #             else:
-        #                 _logger.warning(
-        #                     f"Contact API: Neither 'email' nor 'enterprise_email' found for open_id {open_id[:6]}.")
-        #                 return None
-        #         else:
-        #             _logger.error(
-        #                 "Contact API: Request failed. Code: %s, Msg: %s, Request ID: %s. Note: Insufficient scope is a common cause.",
-        #                 email_res.get("code"), email_res.get("msg"), email_res.get("request_id"))
-        #             # Don't raise exception here, just return None, allowing login to proceed if open_id match works
-        #             return None
-        #
-        #     except (requests.exceptions.RequestException, simplejson.JSONDecodeError) as e:
-        #         _logger.error(f"Contact API: Network or JSON error for open_id {open_id[:6]}: %s", e, exc_info=True)
-        #         return None
-        #     except Exception as e:
-        #         _logger.exception(f"Contact API: Unexpected error for open_id {open_id[:6]}.")
-        #         return None
-
-        # --- Main auth_oauth_lark logic ---
 
         code = params.get("access_token") or params.get("code")
         if not code:
@@ -221,10 +159,6 @@ class ResUsers(models.Model):
         if not email_to_use:
             email_to_use = user_data.get("enterprise_email")
 
-        # email_to_use = get_user_email(lark_access_token, open_id)
-        # _logger.info(f"Final email determined for processing (from Contact API): {email_to_use}")
-        #
-        # # Check if a usable email was found. If not, we cannot proceed with login/creation.
         if not email_to_use:
             _logger.error(f"Could not determine any usable email for open_id {open_id[:6]} after calling Contact API.")
             raise AccessDenied(_("Could not retrieve a usable email address from Lark."))
@@ -255,29 +189,6 @@ class ResUsers(models.Model):
                     _logger.exception(f"Failed to create user with login '{email_to_use}'.")
                     raise AccessDenied(_("Failed to create Odoo user account: %s") % e_create)
 
-        #     else:
-        #         _logger.info(
-        #             f"Found existing user ID {user.id} by login '{email_to_use}'. Linking open_id {open_id[:6]}.")
-        #         try:
-        #             user.write({
-        #                 "openid": open_id,
-        #                 # "oauth_provider_id": provider.id,
-        #                 # "oauth_uid": open_id,
-        #             })
-        #             _logger.info(f"Successfully linked existing user ID {user.id} to open_id {open_id[:6]}.")
-        #         except Exception as e_write:
-        #             _logger.exception(f"Failed to link user ID {user.id} to open_id {open_id[:6]}.")
-        #             raise AccessDenied(_("Failed to link Odoo account to Lark account: %s") % e_write)
-        # else:
-        #     _logger.info(f"Found user ID {user.id} by openid {open_id[:6]}. Proceeding to login.")
-        #     if not user.oauth_provider_id or not user.oauth_uid:
-        #          _logger.info(f"Populating missing OAuth fields for user ID {user.id}.")
-        #          user.write({
-        #              "openid": open_id,
-        #
-        #              # "oauth_provider_id": provider.id,
-        #              # "oauth_uid": open_id,
-        #          })
 
         if user:
             try:
