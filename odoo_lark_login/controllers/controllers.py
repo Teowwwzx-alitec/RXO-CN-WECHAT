@@ -188,7 +188,6 @@ class OAuthController(BaseController):
 
             # 4. Prepare State
             return_url = request.httprequest.url_root
-            # Use the ID found dynamically
             state_dict = { "d": dbname, "p": lark_provider.id }
             state = simplejson.dumps(state_dict)
 

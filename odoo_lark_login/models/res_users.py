@@ -183,6 +183,7 @@ class ResUsers(models.Model):
                         'login': email_to_use,
                         'openid': open_id,
                         'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])],
+                        'active': True,
                     })
                     _logger.info(f"Created new Odoo user ID {user.id} with login '{email_to_use}' linked to open_id {open_id[:6]}.")
                 except Exception as e_create:
@@ -199,8 +200,6 @@ class ResUsers(models.Model):
                 _logger.info("Final write executed for user %s, setting openid and oauth_access_token.", user.id)
             except Exception as e_final_write:
                 _logger.exception(f"Failed during final write for user ID {user.id}.")
-                # Decide if this failure should block login. Previous code didn't have try/except here.
-                # Raising exception might be safer if this write is critical for the old flow.
                 raise AccessDenied(_("Failed to finalize user update: %s") % e_final_write)
         else:
             # This should ideally not be reached if the logic above worked
