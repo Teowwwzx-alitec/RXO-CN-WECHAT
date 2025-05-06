@@ -46,7 +46,7 @@ class ResUsers(models.Model):
             "response_type": "code",
             "app_id": app_id,
             "redirect_uri": bind_url,
-            # "scope": "lark_login",
+            "scope": "lark_login",
             "state": simplejson.dumps(state),
         }
         lark_auth_endpoint = "https://open.larksuite.com/open-apis/authen/v1/index"
