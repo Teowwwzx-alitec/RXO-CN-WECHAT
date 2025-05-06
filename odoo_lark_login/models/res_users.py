@@ -65,7 +65,7 @@ class ResUsers(models.Model):
         If the provider's validation_endpoint indicates a Lark provider, it calls the Lark-specific method.
         """
         oauth_provider = self.env["auth.oauth.provider"].browse(int(provider))
-        if "open-apis/authen/v1" in oauth_provider.validation_endpoint:
+        if "open.larksuite.com/open-apis/authen/v1" in oauth_provider.validation_endpoint:
             return self.auth_oauth_lark(oauth_provider, params)
         else:
             return super(ResUsers, self).auth_oauth(provider, params)
@@ -88,7 +88,7 @@ class ResUsers(models.Model):
             }
             try:
                 response = requests.post(token_url, json=payload, headers=headers, timeout=10)
-                response.raise_for_status() # Check for HTTP errors
+                response.raise_for_status()
                 token_res = response.json()
 
                 _logger.info(f"Lark Token Endpoint Raw Response: {simplejson.dumps(token_res)}") # Use simplejson for consistency
