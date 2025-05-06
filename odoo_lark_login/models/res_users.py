@@ -192,17 +192,17 @@ class ResUsers(models.Model):
                 except Exception as e_create:
                     _logger.exception(f"Failed to create user with login '{email_to_use}'.")
                     raise AccessDenied(_("Failed to create Odoo user account: %s") % e_create)
-        else:
-            try:
-                user.write({
-                    "openid": open_id,
-                    # "oauth_access_token": lark_access_token,
-                })
-                _logger.info("Final write executed for user %s, setting openid and oauth_access_token.", user.id)
-                _logger.info("Final write executed for ", lark_access_token)
-            except Exception as e_final_write:
-                _logger.exception(f"Failed during final write for user ID {user.id}.")
-                raise AccessDenied(_("Failed to finalize user update: %s") % e_final_write)
+        # else:
+        #     try:
+        #         user.write({
+        #             "openid": open_id,
+        #             # "oauth_access_token": lark_access_token,
+        #         })
+        #         _logger.info("Final write executed for user %s, setting openid and oauth_access_token.", user.id)
+        #         _logger.info(f"Final write executed. Token (first 5 chars): {lark_access_token[:5]}")
+        #     except Exception as e_final_write:
+        #         _logger.exception(f"Failed during final write for user ID {user.id}.")
+        #         raise AccessDenied(_("Failed to finalize user update: %s") % e_final_write)
 
         if not user:
             _logger.error(f"User record is unexpectedly missing after processing for open_id {open_id[:6]}")
