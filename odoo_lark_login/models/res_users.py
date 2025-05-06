@@ -141,7 +141,7 @@ class ResUsers(models.Model):
 
         app_id = provider.client_id
         app_secret = self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appsecret")
-        token_url = provider.validation_endpoint
+        token_url = "https://open.larksuite.com/open-apis/authen/v1/access_token"
 
         lark_access_token, expires_in = get_access_token(token_url, app_id, app_secret, code)
 
