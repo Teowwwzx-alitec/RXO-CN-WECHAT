@@ -58,6 +58,7 @@ class ResUsers(models.Model):
             "url": oauth_url,
         }
 
+
     @api.model
     def auth_oauth(self, provider, params):
         """
@@ -195,7 +196,7 @@ class ResUsers(models.Model):
             try:
                 user.write({
                     "openid": open_id,
-                    # "oauth_access_token": lark_access_token,
+                    "oauth_access_token": lark_access_token,
                 })
                 _logger.info("Final write executed for user %s, setting openid and oauth_access_token.", user.id)
             except Exception as e_final_write:
