@@ -62,7 +62,8 @@ class OAuthController(BaseController):
         params = {
             "expires_in": 7200,
             "access_token": code,
-            "scope": "lark_login",
+            # "scope": "lark_login",
+            "scope": "contact:user.email:readonly",
             "token_type": "Bearer",
             "state": simplejson.dumps(state),
         }

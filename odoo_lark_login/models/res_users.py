@@ -187,8 +187,7 @@ class ResUsers(models.Model):
                         'active': True,
                         'oauth_provider_id': provider.id,
                         'oauth_uid': open_id,
-                        "oauth_access_token": lark_access_token,
-
+                        # "oauth_access_token": lark_access_token,
                     })
                     _logger.info(f"Created new Odoo user ID {user.id} with login '{email_to_use}' linked to open_id {open_id[:6]}.")
                 except Exception as e_create:
