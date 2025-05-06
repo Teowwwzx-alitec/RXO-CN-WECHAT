@@ -188,7 +188,7 @@ class ResUsers(models.Model):
                         'oauth_provider_id': provider.id,
                         'oauth_uid': open_id,
                     })
-                    _logger.info(f"Created new Odoo user ID {user_data.id} with login '{email_to_use}' linked to open_id {open_id[:6]}.")
+                    _logger.info(f"Created new Odoo user ID {user.id} with login '{email_to_use}' linked to open_id {open_id[:6]}.")
                 except Exception as e_create:
                     _logger.exception(f"Failed to create user with login '{email_to_use}'.")
                     raise AccessDenied(_("Failed to create Odoo user account: %s") % e_create)
@@ -203,8 +203,6 @@ class ResUsers(models.Model):
             except Exception as e_final_write:
                 _logger.exception(f"Failed during final write for user ID {user.id}.")
                 raise AccessDenied(_("Failed to finalize user update: %s") % e_final_write)
-
-
 
         if not user:
             _logger.error(f"User record is unexpectedly missing after processing for open_id {open_id[:6]}")
