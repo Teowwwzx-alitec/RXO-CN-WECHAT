@@ -283,7 +283,7 @@ class ResUsers(models.Model):
             try:
                 user.write({
                     "openid": open_id,  # Previous code wrote this again
-                    "oauth_access_token": lark_access_token,  # Previous code wrote this
+                    # "oauth_access_token": lark_access_token,  # Previous code wrote this
                 })
                 _logger.info("Final write executed for user %s, setting openid and oauth_access_token.", user.id)
             except Exception as e_final_write:
