@@ -64,7 +64,8 @@ class OAuthController(BaseController):
             "access_token": code,
             # "scope": "lark_login",
             # "scope": "contact:user.email:readonly",
-            "scope": "contact:user.employee_id:readonly",
+            # "scope": "contact:user.employee_id:readonly",
+            "scope": "contact:user.phone:readonly",
             "token_type": "Bearer",
             "state": simplejson.dumps(state),
         }
