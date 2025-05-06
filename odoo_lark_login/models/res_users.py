@@ -156,7 +156,7 @@ class ResUsers(models.Model):
         if not open_id:
             raise AccessDenied("飞书返回的用户信息中没有 open_id")
 
-        email_to_use = user_data.get("email") # Standard email first
+        email_to_use = user_data.get("email")
         if not email_to_use:
             email_to_use = user_data.get("enterprise_email")
 
@@ -179,14 +179,16 @@ class ResUsers(models.Model):
             if not user:
                 _logger.info(f"User not found by login '{email_to_use}'. Creating new user...")
                 try:
-                    user = self.sudo().write({
+                    user = self.sudo().create({
                         'name': user_data.get("name", f"Lark User {open_id[:6]}"),
                         'login': email_to_use,
                         'openid': open_id,
                         'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])],
                         'active': True,
+                        'oauth_provider_id': provider.id,
+                        'oauth_uid': open_id,
                     })
-                    _logger.info(f"Created new Odoo user ID {user.id} with login '{email_to_use}' linked to open_id {open_id[:6]}.")
+                    _logger.info(f"Created new Odoo user ID {user_data.id} with login '{email_to_use}' linked to open_id {open_id[:6]}.")
                 except Exception as e_create:
                     _logger.exception(f"Failed to create user with login '{email_to_use}'.")
                     raise AccessDenied(_("Failed to create Odoo user account: %s") % e_create)
@@ -194,9 +196,10 @@ class ResUsers(models.Model):
             try:
                 user.write({
                     "openid": open_id,
-                    # "oauth_access_token": lark_access_token,
+                    "oauth_access_token": lark_access_token,
                 })
                 _logger.info("Final write executed for user %s, setting openid and oauth_access_token.", user.id)
+                _logger.info("Final write executed for ", lark_access_token)
             except Exception as e_final_write:
                 _logger.exception(f"Failed during final write for user ID {user.id}.")
                 raise AccessDenied(_("Failed to finalize user update: %s") % e_final_write)
