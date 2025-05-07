@@ -162,7 +162,7 @@ class OAuthController(BaseController):
         Initiates the Lark SSO flow immediately by reading the configured
         Lark OAuth provider settings and redirecting the user to Lark.
         """
-        _logger.info("Initiating Lark SSO flow via /lark/go...")
+        # _logger.info("Initiating Lark SSO flow via /lark/go...")
         try:
             # 1. Determine Database
             dbname = request.session.db or http.db_list()[0]
@@ -224,7 +224,7 @@ class OAuthController(BaseController):
                 "state": state,
             }
             lark_auth_url = f"{auth_endpoint}?{url_encode(params)}"
-            _logger.info("Redirecting user to Lark via /lark/go...") # Removed URL from log for slight security
+            # _logger.info("Redirecting user to Lark via /lark/go...") # Removed URL from log for slight security
 
             # 8. Redirect User
             return werkzeug.utils.redirect(lark_auth_url, 302)

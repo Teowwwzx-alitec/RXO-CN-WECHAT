@@ -19,7 +19,7 @@ class ResUsers(models.Model):
         """Remove the Lark binding from the user."""
         self.ensure_one()
         self.write({'openid': False})
-        _logger.info("User %s unbound from Lark", self.id)
+        # _logger.info("User %s unbound from Lark", self.id)
         return {
             'type': 'ir.actions.client',
             'tag': 'reload',
@@ -92,7 +92,7 @@ class ResUsers(models.Model):
                 response.raise_for_status()
                 token_res = response.json()
 
-                _logger.info(f"Lark Token Endpoint Raw Response: {simplejson.dumps(token_res)}") # Use simplejson for consistency
+                # _logger.info(f"Lark Token Endpoint Raw Response: {simplejson.dumps(token_res)}") # Use simplejson for consistency
                 if token_res.get("code") == 0:
                     data = token_res.get("data", {})
                     return data.get("access_token"), data.get("expires_in")
@@ -118,7 +118,7 @@ class ResUsers(models.Model):
                 response.raise_for_status()
                 user_res = response.json()
 
-                _logger.info(f"Lark User Info (/authen/v1/user_info) Raw Response: {simplejson.dumps(user_res)}")
+                # _logger.info(f"Lark User Info (/authen/v1/user_info) Raw Response: {simplejson.dumps(user_res)}")
                 if user_res.get("code") == 0:
                     return user_res.get("data", {})
                 else:
@@ -138,7 +138,7 @@ class ResUsers(models.Model):
             raise AccessDenied("飞书扫码错误：没有 code！")
 
         # Log the received code
-        _logger.info("Received Lark code (first 10 chars): %s...", code[:10] if code else 'None')
+        # _logger.info("Received Lark code (first 10 chars): %s...", code[:10] if code else 'None')
 
         app_id = provider.client_id
         app_secret = self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appsecret")
@@ -149,7 +149,7 @@ class ResUsers(models.Model):
         if not lark_access_token:
             _logger.error("Failed to obtain Lark access token.")
             raise AccessDenied("无法获取Lark访问令牌")
-        _logger.info("Obtained Lark access token (first 5 chars): %s...", lark_access_token[:5])
+        # _logger.info("Obtained Lark access token (first 5 chars): %s...", lark_access_token[:5])
 
         user_data = get_user_info(lark_access_token)
         open_id = user_data.get("open_id")
@@ -157,14 +157,14 @@ class ResUsers(models.Model):
             raise AccessDenied("飞书返回的用户信息中没有 open_id")
 
         email_to_use = user_data.get("email")
-        if not email_to_use:
-            email_to_use = user_data.get("enterprise_email")
+        # if not email_to_use:
+        #     email_to_use = user_data.get("enterprise_email")
 
         if not email_to_use:
-            _logger.error(f"Could not determine any usable email for open_id {open_id[:6]} after calling Contact API.")
+            # _logger.error(f"Could not determine any usable email for open_id {open_id[:6]} after calling Contact API.")
             raise AccessDenied(_("Could not retrieve a usable email address from Lark."))
 
-        _logger.info(f"Searching for existing user by openid: {open_id[:6]}...")
+        # _logger.info(f"Searching for existing user by openid: {open_id[:6]}...")
         user = self.sudo().search([
             '|',
             ('openid', '=', open_id),
@@ -172,12 +172,12 @@ class ResUsers(models.Model):
         ], limit=1)
 
         if not user:
-            _logger.info(f"User not found by openid {open_id[:6]}. Searching by login/email: {email_to_use}...")
+            # _logger.info(f"User not found by openid {open_id[:6]}. Searching by login/email: {email_to_use}...")
             if email_to_use:
                 user = self.sudo().search([("login", "=", email_to_use)], limit=1)
 
             if not user:
-                _logger.info(f"User not found by login '{email_to_use}'. Creating new user...")
+                # _logger.info(f"User not found by login '{email_to_use}'. Creating new user...")
                 try:
                     user = self.sudo().create({
                         'name': user_data.get("name", f"Lark User {open_id[:6]}"),
@@ -188,7 +188,7 @@ class ResUsers(models.Model):
                         'oauth_provider_id': provider.id,
                         'oauth_uid': open_id,
                     })
-                    _logger.info(f"Created new Odoo user ID {user.id} with login '{email_to_use}' linked to open_id {open_id[:6]}.")
+                    # _logger.info(f"Created new Odoo user ID {user.id} with login '{email_to_use}' linked to open_id {open_id[:6]}.")
                 except Exception as e_create:
                     _logger.exception(f"Failed to create user with login '{email_to_use}'.")
                     raise AccessDenied(_("Failed to create Odoo user account: %s") % e_create)
@@ -198,8 +198,8 @@ class ResUsers(models.Model):
                     "openid": open_id,
                     "oauth_access_token": lark_access_token,
                 })
-                _logger.info("Final write executed for user %s, setting openid and oauth_access_token.", user.id)
-                _logger.info(f"Final write executed. Token (first 5 chars): {lark_access_token}")
+                # _logger.info("Final write executed for user %s, setting openid and oauth_access_token.", user.id)
+                # _logger.info(f"Final write executed. Token (first 5 chars): {lark_access_token}")
             except Exception as e_final_write:
                 _logger.exception(f"Failed during final write for user ID {user.id}.")
                 raise AccessDenied(_("Failed to finalize user update: %s") % e_final_write)
@@ -208,6 +208,6 @@ class ResUsers(models.Model):
             _logger.error(f"User record is unexpectedly missing after processing for open_id {open_id[:6]}")
             raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
 
-        _logger.info("Successfully processed authentication for user %s (ID: %s) linked to open_id %s", user.login, user.id, open_id)
+        # _logger.info("Successfully processed authentication for user %s (ID: %s) linked to open_id %s", user.login, user.id, open_id)
 
         return self.env.cr.dbname, user.login, lark_access_token
