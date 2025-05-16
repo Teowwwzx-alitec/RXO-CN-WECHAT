@@ -58,6 +58,62 @@ class OAuthLogin(BaseOAuthLogin):
 
 
 class OAuthController(BaseController):
+    # Override the standard Odoo auth_oauth/signin route specifically for Lark
+    @http.route("/auth_oauth/signin", type="http", auth="none", website=True)
+    def signin(self, **kw):
+        state = kw.get('state', '{}')
+        try:
+            state = simplejson.loads(state)
+        except Exception:
+            state = {}
+        
+        # Check if this is a Lark login (based on session_id in state)
+        if 'session_id' in state and kw.get('access_token'):
+            # This is a Lark login with our special session handling
+            # Extract necessary parameters
+            provider_id = state.get('p')
+            dbname = state.get('d')
+            
+            # If we have all necessary parameters, try to authenticate directly
+            if provider_id and dbname:
+                # Find the provider
+                try:
+                    registry = request.registry
+                    with registry.cursor() as cr:
+                        env = api.Environment(cr, request.uid, {})
+                        provider = env['auth.oauth.provider'].browse(int(provider_id))
+                        
+                        # Validate this is a Lark provider (security check)
+                        if "open.larksuite.com/open-apis/authen/v1" in provider.validation_endpoint:
+                            # This is indeed a Lark provider, proceed with custom authentication
+                            
+                            # Get the code/token from Lark
+                            access_token = kw.get('access_token')
+                            
+                            # Find user by openid (need to implement a lookup function in res_users)
+                            cr.execute("""
+                                SELECT u.login, u.id
+                                FROM res_users u
+                                JOIN auth_oauth_provider p ON p.id = u.oauth_provider_id
+                                WHERE p.id = %s
+                                AND u.active = TRUE
+                                LIMIT 1
+                            """, (int(provider_id),))
+                            
+                            result = cr.fetchone()
+                            if result:
+                                login, user_id = result
+                                
+                                # Create a session and log in the user
+                                request.session.authenticate(dbname, login, access_token, {"interactive": False})
+                                redirect = state.get('redirect') or '/'
+                                return request.redirect(redirect)
+                except Exception as e:
+                    _logger.exception("Lark auth exception: %s", e)
+        
+        # If it's not a Lark login or something went wrong, fall back to standard OAuth signin
+        return super(OAuthController, self).signin(**kw)
+
     # Core function
     @http.route("/lark/login", type="http", auth="none")
     def lark_login(self, **kw):
