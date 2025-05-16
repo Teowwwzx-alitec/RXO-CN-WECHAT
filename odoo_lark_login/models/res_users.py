@@ -15,7 +15,6 @@ class ResUsers(models.Model):
     _inherit = "res.users"
 
     openid = fields.Char(string="Openid")
-    lark_openid = fields.Char(string="Lark OpenID")
 
     def unbind_from_lark(self):
         """Remove the Lark binding from the user."""
@@ -242,15 +241,11 @@ class ResUsers(models.Model):
         if user:
             try:
                 # Update only the openid field for identification
-                # Store the access token separately in the session (handled by Odoo auth framework)
                 user.write(
                     {
                         "openid": open_id,
-                        "lark_openid": open_id,  # Store Lark ID in the dedicated field
-                        # The token is not stored in the user record but returned to be stored in the session
                     }
                 )
-                # _logger.info("Final write executed for user %s, setting openid.", user.id)
             except Exception as e_final_write:
                 _logger.exception(f"Failed during final write for user ID {user.id}.")
                 raise AccessDenied(
@@ -265,4 +260,5 @@ class ResUsers(models.Model):
 
         # _logger.info("Successfully processed authentication for user %s (ID: %s) linked to open_id %s", user.login, user.id, open_id)
 
+        # Return the token for Odoo to store in the session
         return self.env.cr.dbname, user.login, lark_access_token

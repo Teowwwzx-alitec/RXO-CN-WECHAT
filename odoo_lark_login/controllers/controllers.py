@@ -71,17 +71,15 @@ class OAuthController(BaseController):
         if not code:
             return BadRequest("Missing code parameter")
 
+        # Modification: Only pass the code to auth_oauth, not as access_token
+        # This change follows standard Odoo OAuth flow where the auth_oauth method
+        # gets the code and retrieves the token itself
         params = {
-            "expires_in": 7200,
-            "access_token": code,
-            # "scope": "lark_login",
-            # "scope": "contact:user.email:readonly",
-            # "scope": "contact:user.employee_id:readonly",
-            # "scope": "contact:user.phone:readonly",
-            "token_type": "Bearer",
+            "code": code,  # Pass as code, not access_token
             "state": simplejson.dumps(state),
         }
-        # Redirect to the function in res_users.py
+        
+        # Redirect to the standard Odoo OAuth signin
         return werkzeug.utils.redirect(
             redirect_uri + "auth_oauth/signin?%s" % url_encode(params)
         )
