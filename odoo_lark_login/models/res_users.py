@@ -15,11 +15,12 @@ class ResUsers(models.Model):
     _inherit = "res.users"
 
     openid = fields.Char(string="Openid")
+    oauth_access_token = fields.Char(string="OAuth Access Token")
 
     def unbind_from_lark(self):
         """Remove the Lark binding from the user."""
         self.ensure_one()
-        self.write({"openid": False})
+        self.write({"openid": False, "oauth_access_token": False})
         # _logger.info("User %s unbound from Lark", self.id)
         return {
             "type": "ir.actions.client",
@@ -240,10 +241,12 @@ class ResUsers(models.Model):
                     )
         if user:
             try:
-                # Update only the openid field for identification
+                # For Lark login, we need to store the token for the Odoo OAuth flow
+                # but we don't verify it against stored token to prevent multi-browser issues
                 user.write(
                     {
                         "openid": open_id,
+                        "oauth_access_token": lark_access_token,
                     }
                 )
             except Exception as e_final_write:

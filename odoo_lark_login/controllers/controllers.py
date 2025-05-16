@@ -71,12 +71,22 @@ class OAuthController(BaseController):
         if not code:
             return BadRequest("Missing code parameter")
 
-        # Modification: Only pass the code to auth_oauth, not as access_token
-        # This change follows standard Odoo OAuth flow where the auth_oauth method
-        # gets the code and retrieves the token itself
+        # Add a unique session identifier to support multiple browser logins
+        # This doesn't affect the code parameter used for authentication
+        import time
+        import random
+        import hashlib
+        session_id = hashlib.md5(f"{time.time()}{random.random()}".encode()).hexdigest()[:8]
+        
+        # Important: Pass the code as access_token for authentication
+        # Add our session identifier to the state for tracking
+        state_data = simplejson.loads(kw.get("state", "{}"))
+        state_data["session_id"] = session_id
+        
         params = {
-            "code": code,  # Pass as code, not access_token
-            "state": simplejson.dumps(state),
+            "expires_in": 7200,
+            "access_token": code,  # Pass code as access_token parameter
+            "state": simplejson.dumps(state_data),
         }
         
         # Redirect to the standard Odoo OAuth signin
