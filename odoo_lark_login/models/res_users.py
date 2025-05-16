@@ -218,19 +218,27 @@ class ResUsers(models.Model):
             if not user:
                 # _logger.info(f"User not found by login '{email_to_use}'. Creating new user...")
                 try:
-                    # Only assign the internal user type - users can't have multiple user types
-                    # This will give sufficient permissions for language access and website viewing
+                    # Assign internal user type (group_user) with mail groups for proper functionality
                     internal_user_group = self.env.ref("base.group_user")
+                    
+                    # Add mail-related groups to avoid mail initialization errors
+                    mail_groups = [
+                        internal_user_group.id,
+                        # Base groups needed for proper user functionality
+                        self.env.ref('base.group_portal').id
+                    ]
                     
                     user = self.sudo().create(
                         {
                             "name": user_data.get("name", f"Lark User {open_id[:6]}"),
                             "login": email_to_use,
                             "openid": open_id,
-                            "groups_id": [(6, 0, [internal_user_group.id])],
+                            "groups_id": [(6, 0, mail_groups)],
                             "active": True,
                             "oauth_provider_id": provider.id,
                             "oauth_uid": open_id,
+                            # Set an initial oauth_access_token to prevent validation errors
+                            "oauth_access_token": lark_access_token,
                         }
                     )
                     # _logger.info(f"Created new Odoo user ID {user.id} with login '{email_to_use}' linked to open_id {open_id[:6]}.")
@@ -243,18 +251,19 @@ class ResUsers(models.Model):
                     )
         if user:
             try:
-                # Check if this is a first login or updating an existing user
-                is_first_login = not user.oauth_access_token
+                # For multi-browser login support:
+                # 1. Check if this is a first-time login or token update
+                # 2. Store the open_id for user identification
+                # 3. Only update the token if it's different to avoid overwriting active sessions
                 
-                # For multi-browser login support, we only set oauth_access_token 
-                # if this is the first login. For subsequent logins, we skip updating
-                # oauth_access_token to prevent overwriting the token used by other sessions.
                 update_values = {
                     "openid": open_id,
                 }
                 
-                # Only set oauth_access_token on first login
-                if is_first_login:
+                # Only update oauth_access_token if it's different
+                # This should allow multiple browser sessions to coexist
+                if user.oauth_access_token != lark_access_token:
+                    _logger.info(f"Updating oauth_access_token for user ID {user.id}")
                     update_values["oauth_access_token"] = lark_access_token
                 
                 user.write(update_values)
