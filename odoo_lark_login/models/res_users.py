@@ -241,20 +241,27 @@ class ResUsers(models.Model):
                     )
         if user:
             try:
-                # For Lark login, we need to store the token for the Odoo OAuth flow
-                # but we don't verify it against stored token to prevent multi-browser issues
-                user.write(
-                    {
-                        "openid": open_id,
-                        "oauth_access_token": lark_access_token,
-                    }
-                )
+                # Check if this is a first login or updating an existing user
+                is_first_login = not user.oauth_access_token
+                
+                # For multi-browser login support, we only set oauth_access_token 
+                # if this is the first login. For subsequent logins, we skip updating
+                # oauth_access_token to prevent overwriting the token used by other sessions.
+                update_values = {
+                    "openid": open_id,
+                }
+                
+                # Only set oauth_access_token on first login
+                if is_first_login:
+                    update_values["oauth_access_token"] = lark_access_token
+                
+                user.write(update_values)
+                
             except Exception as e_final_write:
                 _logger.exception(f"Failed during final write for user ID {user.id}.")
                 raise AccessDenied(
                     _("Failed to finalize user update: %s") % e_final_write
                 )
-
         if not user:
             _logger.error(
                 f"User record is unexpectedly missing after processing for open_id {open_id[:6]}"
