@@ -224,7 +224,9 @@ class ResUsers(models.Model):
                             "login": email_to_use,
                             "openid": open_id,
                             "groups_id": [
-                                (6, 0, [self.env.ref("base.group_portal").id])
+                                # Grant portal access and internal user access for proper website viewing
+                                (6, 0, [self.env.ref("base.group_portal").id,
+                                       self.env.ref("base.group_user").id])
                             ],
                             "active": True,
                             "oauth_provider_id": provider.id,
