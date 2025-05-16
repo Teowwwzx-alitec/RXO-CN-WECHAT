@@ -15,14 +15,16 @@ class ResUsers(models.Model):
     _inherit = "res.users"
 
     openid = fields.Char(string="Openid")
+    lark_openid = fields.Char(string="Lark OpenID")
+
     def unbind_from_lark(self):
         """Remove the Lark binding from the user."""
         self.ensure_one()
-        self.write({'openid': False})
+        self.write({"openid": False})
         # _logger.info("User %s unbound from Lark", self.id)
         return {
-            'type': 'ir.actions.client',
-            'tag': 'reload',
+            "type": "ir.actions.client",
+            "tag": "reload",
         }
 
     def bind_to_lark(self):
@@ -32,8 +34,12 @@ class ResUsers(models.Model):
         that redirects the user to Lark's OAuth endpoint.
         """
         self.ensure_one()
-        app_id = self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appid")
-        bind_url = self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.bind_url")
+        app_id = (
+            self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appid")
+        )
+        bind_url = (
+            self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.bind_url")
+        )
         base_url = self.env["ir.config_parameter"].sudo().get_param("web.base.url")
 
         state = {
@@ -58,7 +64,6 @@ class ResUsers(models.Model):
             "url": oauth_url,
         }
 
-
     @api.model
     def auth_oauth(self, provider, params):
         """
@@ -66,7 +71,10 @@ class ResUsers(models.Model):
         If the provider's validation_endpoint indicates a Lark provider, it calls the Lark-specific method.
         """
         oauth_provider = self.env["auth.oauth.provider"].browse(int(provider))
-        if "open.larksuite.com/open-apis/authen/v1" in oauth_provider.validation_endpoint:
+        if (
+            "open.larksuite.com/open-apis/authen/v1"
+            in oauth_provider.validation_endpoint
+        ):
             return self.auth_oauth_lark(oauth_provider, params)
         else:
             return super(ResUsers, self).auth_oauth(provider, params)
@@ -79,6 +87,7 @@ class ResUsers(models.Model):
           2. Retrieves user info from Lark.
           3. Finds (or binds) an Odoo user using the returned open_id.
         """
+
         def get_access_token(token_url, app_id, app_secret, code):
             headers = {"Content-Type": "application/json"}
             payload = {
@@ -88,7 +97,9 @@ class ResUsers(models.Model):
                 "app_secret": app_secret,
             }
             try:
-                response = requests.post(token_url, json=payload, headers=headers, timeout=10)
+                response = requests.post(
+                    token_url, json=payload, headers=headers, timeout=10
+                )
                 response.raise_for_status()
                 token_res = response.json()
 
@@ -97,10 +108,19 @@ class ResUsers(models.Model):
                     data = token_res.get("data", {})
                     return data.get("access_token"), data.get("expires_in")
                 else:
-                    _logger.error("Lark get_access_token failed. Code: %s, Msg: %s", token_res.get("code"), token_res.get("msg"))
-                    raise AccessDenied("飞书获取access_token错误：code=%s, msg=%s" % (token_res.get("code"), token_res.get("msg")))
+                    _logger.error(
+                        "Lark get_access_token failed. Code: %s, Msg: %s",
+                        token_res.get("code"),
+                        token_res.get("msg"),
+                    )
+                    raise AccessDenied(
+                        "飞书获取access_token错误：code=%s, msg=%s"
+                        % (token_res.get("code"), token_res.get("msg"))
+                    )
             except requests.exceptions.RequestException as e:
-                _logger.error(f"Network error calling Lark Token Endpoint: {e}", exc_info=True)
+                _logger.error(
+                    f"Network error calling Lark Token Endpoint: {e}", exc_info=True
+                )
                 raise AccessDenied(f"Network error getting Lark token: {e}")
             except Exception as e:
                 _logger.exception(f"Error processing Lark Token response.")
@@ -122,15 +142,23 @@ class ResUsers(models.Model):
                 if user_res.get("code") == 0:
                     return user_res.get("data", {})
                 else:
-                    _logger.error("Lark get_user_info failed. Code: %s, Msg: %s", user_res.get("code"), user_res.get("msg"))
-                    raise AccessDenied("飞书获取用户信息错误：code=%s, msg=%s" % (user_res.get("code"), user_res.get("msg")))
+                    _logger.error(
+                        "Lark get_user_info failed. Code: %s, Msg: %s",
+                        user_res.get("code"),
+                        user_res.get("msg"),
+                    )
+                    raise AccessDenied(
+                        "飞书获取用户信息错误：code=%s, msg=%s"
+                        % (user_res.get("code"), user_res.get("msg"))
+                    )
             except requests.exceptions.RequestException as e:
-                 _logger.error(f"Network error calling Lark User Info Endpoint: {e}", exc_info=True)
-                 raise AccessDenied(f"Network error getting Lark user info: {e}")
+                _logger.error(
+                    f"Network error calling Lark User Info Endpoint: {e}", exc_info=True
+                )
+                raise AccessDenied(f"Network error getting Lark user info: {e}")
             except Exception as e:
-                 _logger.exception(f"Error processing Lark User Info response.")
-                 raise AccessDenied(f"Error processing Lark user info response: {e}")
-
+                _logger.exception(f"Error processing Lark User Info response.")
+                raise AccessDenied(f"Error processing Lark user info response: {e}")
 
         code = params.get("access_token") or params.get("code")
         if not code:
@@ -141,10 +169,16 @@ class ResUsers(models.Model):
         # _logger.info("Received Lark code (first 10 chars): %s...", code[:10] if code else 'None')
 
         app_id = provider.client_id
-        app_secret = self.env["ir.config_parameter"].sudo().get_param("odoo_lark_login.appsecret")
+        app_secret = (
+            self.env["ir.config_parameter"]
+            .sudo()
+            .get_param("odoo_lark_login.appsecret")
+        )
         token_url = "https://open.larksuite.com/open-apis/authen/v1/access_token"
 
-        lark_access_token, expires_in = get_access_token(token_url, app_id, app_secret, code)
+        lark_access_token, expires_in = get_access_token(
+            token_url, app_id, app_secret, code
+        )
 
         if not lark_access_token:
             _logger.error("Failed to obtain Lark access token.")
@@ -162,14 +196,19 @@ class ResUsers(models.Model):
 
         if not email_to_use:
             # _logger.error(f"Could not determine any usable email for open_id {open_id[:6]} after calling Contact API.")
-            raise AccessDenied(_("Could not retrieve a usable email address from Lark."))
+            raise AccessDenied(
+                _("Could not retrieve a usable email address from Lark.")
+            )
 
         # _logger.info(f"Searching for existing user by openid: {open_id[:6]}...")
-        user = self.sudo().search([
-            '|',
-            ('openid', '=', open_id),
-            ('oauth_uid', '=', open_id),
-        ], limit=1)
+        user = self.sudo().search(
+            [
+                "|",
+                ("openid", "=", open_id),
+                ("oauth_uid", "=", open_id),
+            ],
+            limit=1,
+        )
 
         if not user:
             # _logger.info(f"User not found by openid {open_id[:6]}. Searching by login/email: {email_to_use}...")
@@ -179,33 +218,49 @@ class ResUsers(models.Model):
             if not user:
                 # _logger.info(f"User not found by login '{email_to_use}'. Creating new user...")
                 try:
-                    user = self.sudo().create({
-                        'name': user_data.get("name", f"Lark User {open_id[:6]}"),
-                        'login': email_to_use,
-                        'openid': open_id,
-                        'groups_id': [(6, 0, [self.env.ref('base.group_portal').id])],
-                        'active': True,
-                        'oauth_provider_id': provider.id,
-                        'oauth_uid': open_id,
-                    })
+                    user = self.sudo().create(
+                        {
+                            "name": user_data.get("name", f"Lark User {open_id[:6]}"),
+                            "login": email_to_use,
+                            "openid": open_id,
+                            "groups_id": [
+                                (6, 0, [self.env.ref("base.group_portal").id])
+                            ],
+                            "active": True,
+                            "oauth_provider_id": provider.id,
+                            "oauth_uid": open_id,
+                        }
+                    )
                     # _logger.info(f"Created new Odoo user ID {user.id} with login '{email_to_use}' linked to open_id {open_id[:6]}.")
                 except Exception as e_create:
-                    _logger.exception(f"Failed to create user with login '{email_to_use}'.")
-                    raise AccessDenied(_("Failed to create Odoo user account: %s") % e_create)
+                    _logger.exception(
+                        f"Failed to create user with login '{email_to_use}'."
+                    )
+                    raise AccessDenied(
+                        _("Failed to create Odoo user account: %s") % e_create
+                    )
         if user:
             try:
-                user.write({
-                    "openid": open_id,
-                    "oauth_access_token": lark_access_token,
-                })
-                # _logger.info("Final write executed for user %s, setting openid and oauth_access_token.", user.id)
-                # _logger.info(f"Final write executed. Token (first 5 chars): {lark_access_token}")
+                # Update only the openid field for identification
+                # Store the access token separately in the session (handled by Odoo auth framework)
+                user.write(
+                    {
+                        "openid": open_id,
+                        "lark_openid": open_id,  # Store Lark ID in the dedicated field
+                        # The token is not stored in the user record but returned to be stored in the session
+                    }
+                )
+                # _logger.info("Final write executed for user %s, setting openid.", user.id)
             except Exception as e_final_write:
                 _logger.exception(f"Failed during final write for user ID {user.id}.")
-                raise AccessDenied(_("Failed to finalize user update: %s") % e_final_write)
+                raise AccessDenied(
+                    _("Failed to finalize user update: %s") % e_final_write
+                )
 
         if not user:
-            _logger.error(f"User record is unexpectedly missing after processing for open_id {open_id[:6]}")
+            _logger.error(
+                f"User record is unexpectedly missing after processing for open_id {open_id[:6]}"
+            )
             raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
 
         # _logger.info("Successfully processed authentication for user %s (ID: %s) linked to open_id %s", user.login, user.id, open_id)
