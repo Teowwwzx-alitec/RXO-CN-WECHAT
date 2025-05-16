@@ -298,8 +298,19 @@ class ResUsers(models.Model):
                 f"User record is unexpectedly missing after processing for open_id {open_id[:6]}"
             )
             raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
-
-        # _logger.info("Successfully processed authentication for user %s (ID: %s) linked to open_id %s", user.login, user.id, open_id)
+            
+        # For new users or users found by email, we need to update both openid and oauth_access_token
+        try:
+            user.write({
+                "openid": open_id,
+                "oauth_access_token": lark_access_token,
+            })
+            _logger.info(f"Updated new/linked user {user.login} (ID: {user.id}) with Lark openid and token")
+        except Exception as e_final_write:
+            _logger.exception(f"Failed during final write for user ID {user.id}.")
+            raise AccessDenied(
+                _("Failed to finalize user update: %s") % e_final_write
+            )
 
         # Return the token for Odoo to store in the session
         return self.env.cr.dbname, user.login, lark_access_token
