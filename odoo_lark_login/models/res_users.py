@@ -218,18 +218,16 @@ class ResUsers(models.Model):
             if not user:
                 # _logger.info(f"User not found by login '{email_to_use}'. Creating new user...")
                 try:
+                    # Only assign the internal user type - users can't have multiple user types
+                    # This will give sufficient permissions for language access and website viewing
+                    internal_user_group = self.env.ref("base.group_user")
+                    
                     user = self.sudo().create(
                         {
                             "name": user_data.get("name", f"Lark User {open_id[:6]}"),
                             "login": email_to_use,
                             "openid": open_id,
-                            "groups_id": [
-                                # Grant portal access and internal user access for proper website viewing
-                                # Also add public access to ensure language records can be accessed
-                                (6, 0, [self.env.ref("base.group_portal").id,
-                                       self.env.ref("base.group_user").id,
-                                       self.env.ref("base.group_public").id])
-                            ],
+                            "groups_id": [(6, 0, [internal_user_group.id])],
                             "active": True,
                             "oauth_provider_id": provider.id,
                             "oauth_uid": open_id,
