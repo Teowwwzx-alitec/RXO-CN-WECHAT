@@ -83,6 +83,10 @@ class OAuthController(BaseController):
         state_data = simplejson.loads(kw.get("state", "{}"))
         state_data["session_id"] = session_id
         
+        # Add redirect parameter to go to /web instead of website homepage
+        # This avoids the language permission issues with website rendering
+        state_data["redirect"] = "/web"
+        
         params = {
             "expires_in": 7200,
             "access_token": code,  # Pass code as access_token parameter
@@ -90,6 +94,7 @@ class OAuthController(BaseController):
         }
         
         # Redirect to the standard Odoo OAuth signin
+        # This will handle the authentication properly
         return werkzeug.utils.redirect(
             redirect_uri + "auth_oauth/signin?%s" % url_encode(params)
         )

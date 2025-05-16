@@ -225,8 +225,10 @@ class ResUsers(models.Model):
                             "openid": open_id,
                             "groups_id": [
                                 # Grant portal access and internal user access for proper website viewing
+                                # Also add public access to ensure language records can be accessed
                                 (6, 0, [self.env.ref("base.group_portal").id,
-                                       self.env.ref("base.group_user").id])
+                                       self.env.ref("base.group_user").id,
+                                       self.env.ref("base.group_public").id])
                             ],
                             "active": True,
                             "oauth_provider_id": provider.id,
