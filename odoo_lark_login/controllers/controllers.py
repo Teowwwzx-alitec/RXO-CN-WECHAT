@@ -58,62 +58,6 @@ class OAuthLogin(BaseOAuthLogin):
 
 
 class OAuthController(BaseController):
-    # Override the standard Odoo auth_oauth/signin route specifically for Lark
-    @http.route("/auth_oauth/signin", type="http", auth="none", website=True)
-    def signin(self, **kw):
-        state = kw.get('state', '{}')
-        try:
-            state = simplejson.loads(state)
-        except Exception:
-            state = {}
-        
-        # Check if this is a Lark login (based on session_id in state)
-        if 'session_id' in state and kw.get('access_token'):
-            # This is a Lark login with our special session handling
-            # Extract necessary parameters
-            provider_id = state.get('p')
-            dbname = state.get('d')
-            
-            # If we have all necessary parameters, try to authenticate directly
-            if provider_id and dbname:
-                # Find the provider
-                try:
-                    registry = request.registry
-                    with registry.cursor() as cr:
-                        env = api.Environment(cr, request.uid, {})
-                        provider = env['auth.oauth.provider'].browse(int(provider_id))
-                        
-                        # Validate this is a Lark provider (security check)
-                        if "open.larksuite.com/open-apis/authen/v1" in provider.validation_endpoint:
-                            # This is indeed a Lark provider, proceed with custom authentication
-                            
-                            # Get the code/token from Lark
-                            access_token = kw.get('access_token')
-                            
-                            # Find user by openid (need to implement a lookup function in res_users)
-                            cr.execute("""
-                                SELECT u.login, u.id
-                                FROM res_users u
-                                JOIN auth_oauth_provider p ON p.id = u.oauth_provider_id
-                                WHERE p.id = %s
-                                AND u.active = TRUE
-                                LIMIT 1
-                            """, (int(provider_id),))
-                            
-                            result = cr.fetchone()
-                            if result:
-                                login, user_id = result
-                                
-                                # Create a session and log in the user
-                                request.session.authenticate(dbname, login, access_token, {"interactive": False})
-                                redirect = state.get('redirect') or '/'
-                                return request.redirect(redirect)
-                except Exception as e:
-                    _logger.exception("Lark auth exception: %s", e)
-        
-        # If it's not a Lark login or something went wrong, fall back to standard OAuth signin
-        return super(OAuthController, self).signin(**kw)
-
     # Core function
     @http.route("/lark/login", type="http", auth="none")
     def lark_login(self, **kw):
@@ -127,30 +71,15 @@ class OAuthController(BaseController):
         if not code:
             return BadRequest("Missing code parameter")
 
-        # Add a unique session identifier to support multiple browser logins
-        # This doesn't affect the code parameter used for authentication
-        import time
-        import random
-        import hashlib
-        session_id = hashlib.md5(f"{time.time()}{random.random()}".encode()).hexdigest()[:8]
-        
-        # Important: Pass the code as access_token for authentication
-        # Add our session identifier to the state for tracking
-        state_data = simplejson.loads(kw.get("state", "{}"))
-        state_data["session_id"] = session_id
-        
-        # Add redirect parameter to go to /web instead of website homepage
-        # This avoids the language permission issues with website rendering
-        state_data["redirect"] = "/web"
-        
+        # Modification: Only pass the code to auth_oauth, not as access_token
+        # This change follows standard Odoo OAuth flow where the auth_oauth method
+        # gets the code and retrieves the token itself
         params = {
-            "expires_in": 7200,
-            "access_token": code,  # Pass code as access_token parameter
-            "state": simplejson.dumps(state_data),
+            "code": code,  # Pass as code, not access_token
+            "state": simplejson.dumps(state),
         }
         
         # Redirect to the standard Odoo OAuth signin
-        # This will handle the authentication properly
         return werkzeug.utils.redirect(
             redirect_uri + "auth_oauth/signin?%s" % url_encode(params)
         )
