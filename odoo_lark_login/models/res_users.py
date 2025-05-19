@@ -175,47 +175,76 @@ class ResUsers(models.Model):
         )
         token_url = "https://open.larksuite.com/open-apis/authen/v1/access_token"
 
-        lark_access_token, expires_in = get_access_token(
-            token_url, app_id, app_secret, code
-        )
+        # Get the new access token from Lark
+        new_access_token, expires_in = get_access_token(token_url, app_id, app_secret, code)
 
-        if not lark_access_token:
+        if not new_access_token:
             _logger.error("Failed to obtain Lark access token.")
             raise AccessDenied("无法获取Lark访问令牌")
-        # _logger.info("Obtained Lark access token (first 5 chars): %s...", lark_access_token[:5])
-
-        user_data = get_user_info(lark_access_token)
+        
+        # Get user info from Lark to obtain the open_id
+        user_data = get_user_info(new_access_token)
         open_id = user_data.get("open_id")
         if not open_id:
             raise AccessDenied("飞书返回的用户信息中没有 open_id")
 
+        # Look for existing user with this open_id
+        user = self.sudo().search([
+            "|",
+            ("openid", "=", open_id),
+            ("oauth_uid", "=", open_id),
+        ], limit=1)
+
+        # ------ TOKEN MANAGEMENT STARTS HERE ------
+        # Check if we already have a session for this user
+        LarkSession = self.env["lark.user.session"].sudo()
+        
+        if user:
+            # First, try to find an existing valid token for this user
+            existing_session = LarkSession.search([
+                ("user_id", "=", user.id), 
+                ("active", "=", True),
+                ("expire_date", ">", fields.Datetime.now())
+            ], limit=1, order="create_date DESC")
+            
+            # If we found a valid token, use that instead of the new token
+            if existing_session:
+                # Update last used time
+                existing_session.write({"last_used": fields.Datetime.now()})
+                
+                # Important: use the existing token for authentication
+                # This is key to preventing session invalidation
+                token_to_use = existing_session.token
+                # _logger.info("Using existing token for authentication")
+            else:
+                # No valid token found, create a new session with the new token
+                LarkSession.create({
+                    "user_id": user.id,
+                    "token": new_access_token,
+                    "expires_in": expires_in
+                })
+                token_to_use = new_access_token
+                # _logger.info("Created new token session")
+        else:
+            # For new users, always use the new token
+            token_to_use = new_access_token
+            # We'll create a session later after the user is created
+        # ------ TOKEN MANAGEMENT ENDS HERE ------
+
+        # Continue with email handling for user creation/lookup
         email_to_use = user_data.get("email")
-        # if not email_to_use:
-        #     email_to_use = user_data.get("enterprise_email")
-
+        
         if not email_to_use:
-            # _logger.error(f"Could not determine any usable email for open_id {open_id[:6]} after calling Contact API.")
-            raise AccessDenied(
-                _("Could not retrieve a usable email address from Lark.")
-            )
+            # _logger.error(f"Could not determine any usable email for open_id {open_id[:6]}")
+            raise AccessDenied(_("Could not retrieve a usable email address from Lark."))
 
-        # _logger.info(f"Searching for existing user by openid: {open_id[:6]}...")
-        user = self.sudo().search(
-            [
-                "|",
-                ("openid", "=", open_id),
-                ("oauth_uid", "=", open_id),
-            ],
-            limit=1,
-        )
-
+        # If user not found by open_id, search by email
         if not user:
-            # _logger.info(f"User not found by openid {open_id[:6]}. Searching by login/email: {email_to_use}...")
             if email_to_use:
                 user = self.sudo().search([("login", "=", email_to_use)], limit=1)
 
+            # If still not found, create a new user
             if not user:
-                # _logger.info(f"User not found by login '{email_to_use}'. Creating new user...")
                 try:
                     user = self.sudo().create(
                         {
@@ -228,66 +257,36 @@ class ResUsers(models.Model):
                             "active": True,
                             "oauth_provider_id": provider.id,
                             "oauth_uid": open_id,
+                            "oauth_access_token": token_to_use,  # Use our managed token
                         }
                     )
-                    # _logger.info(f"Created new Odoo user ID {user.id} with login '{email_to_use}' linked to open_id {open_id[:6]}.")
+                    
+                    # For new users, create a session record
+                    if token_to_use == new_access_token:  # If using the new token
+                        LarkSession.create({
+                            "user_id": user.id,
+                            "token": new_access_token,
+                            "expires_in": expires_in
+                        })
+                        
                 except Exception as e_create:
-                    _logger.exception(
-                        f"Failed to create user with login '{email_to_use}'."
-                    )
-                    raise AccessDenied(
-                        _("Failed to create Odoo user account: %s") % e_create
-                    )
-        if user:
+                    _logger.exception(f"Failed to create user with login '{email_to_use}'.")
+                    raise AccessDenied(_("Failed to create Odoo user account: %s") % e_create)
+        
+        # For existing users, update the open_id and token
+        if user and user.id:
             try:
-                # First, check if we already have a valid token for this user
-                LarkSession = self.env["lark.user.session"].sudo()
-                existing_token = False
-                
-                # Look for any existing valid token
-                existing_session = LarkSession.search([
-                    ("user_id", "=", user.id), 
-                    ("active", "=", True),
-                    ("expire_date", ">", fields.Datetime.now())
-                ], limit=1)
-                
-                if existing_session:
-                    # Use the existing token
-                    existing_token = existing_session.token
-                    # Update last_used time
-                    existing_session.write({"last_used": fields.Datetime.now()})
-                    # _logger.info("Found existing token, using it instead of the new one")
-                
-                # If no valid token exists, store the new one
-                if not existing_token:
-                    # _logger.info("No valid token found, using the new one")
-                    LarkSession.create({
-                        "user_id": user.id,
-                        "token": lark_access_token
-                    })
-                    existing_token = lark_access_token
-                
-                # Always update the user's openid and oauth_access_token
-                # The oauth_access_token is needed for standard Odoo OAuth compatibility
                 user.write({
                     "openid": open_id,
-                    # Use existing valid token or the new one
-                    "oauth_access_token": existing_token,
+                    "oauth_access_token": token_to_use,  # Use our managed token
                 })
-                
-                # _logger.info("Updated user login info and token management")
             except Exception as e_final_write:
                 _logger.exception(f"Failed during final write for user ID {user.id}.")
-                raise AccessDenied(
-                    _("Failed to finalize user update: %s") % e_final_write
-                )
+                raise AccessDenied(_("Failed to finalize user update: %s") % e_final_write)
 
         if not user:
-            _logger.error(
-                f"User record is unexpectedly missing after processing for open_id {open_id[:6]}"
-            )
+            _logger.error(f"User record is unexpectedly missing after processing for open_id {open_id[:6]}")
             raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
 
-        # _logger.info("Successfully processed authentication for user %s (ID: %s) linked to open_id %s", user.login, user.id, open_id)
-
-        return self.env.cr.dbname, user.login, lark_access_token
+        # Return the database, login and token for Odoo's session
+        return self.env.cr.dbname, user.login, token_to_use
