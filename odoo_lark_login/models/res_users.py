@@ -240,14 +240,20 @@ class ResUsers(models.Model):
                     )
         if user:
             try:
+                # Update only the openid, not the token
                 user.write(
                     {
                         "openid": open_id,
-                        "oauth_access_token": lark_access_token,
                     }
                 )
-                # _logger.info("Final write executed for user %s, setting openid and oauth_access_token.", user.id)
-                # _logger.info(f"Final write executed. Token (first 5 chars): {lark_access_token}")
+                
+                # Store the token in our session model
+                self.env["lark.user.session"].create_or_update_session(
+                    user_id=user.id,
+                    token=lark_access_token
+                )
+                
+                # _logger.info("Updated user and stored token in session manager")
             except Exception as e_final_write:
                 _logger.exception(f"Failed during final write for user ID {user.id}.")
                 raise AccessDenied(
