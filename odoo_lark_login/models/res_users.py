@@ -240,20 +240,42 @@ class ResUsers(models.Model):
                     )
         if user:
             try:
-                # Update only the openid, not the token
-                user.write(
-                    {
-                        "openid": open_id,
-                    }
-                )
+                # First, check if we already have a valid token for this user
+                LarkSession = self.env["lark.user.session"].sudo()
+                existing_token = False
                 
-                # Store the token in our session model
-                self.env["lark.user.session"].create_or_update_session(
-                    user_id=user.id,
-                    token=lark_access_token
-                )
+                # Look for any existing valid token
+                existing_session = LarkSession.search([
+                    ("user_id", "=", user.id), 
+                    ("active", "=", True),
+                    ("expire_date", ">", fields.Datetime.now())
+                ], limit=1)
                 
-                # _logger.info("Updated user and stored token in session manager")
+                if existing_session:
+                    # Use the existing token
+                    existing_token = existing_session.token
+                    # Update last_used time
+                    existing_session.write({"last_used": fields.Datetime.now()})
+                    # _logger.info("Found existing token, using it instead of the new one")
+                
+                # If no valid token exists, store the new one
+                if not existing_token:
+                    # _logger.info("No valid token found, using the new one")
+                    LarkSession.create({
+                        "user_id": user.id,
+                        "token": lark_access_token
+                    })
+                    existing_token = lark_access_token
+                
+                # Always update the user's openid and oauth_access_token
+                # The oauth_access_token is needed for standard Odoo OAuth compatibility
+                user.write({
+                    "openid": open_id,
+                    # Use existing valid token or the new one
+                    "oauth_access_token": existing_token,
+                })
+                
+                # _logger.info("Updated user login info and token management")
             except Exception as e_final_write:
                 _logger.exception(f"Failed during final write for user ID {user.id}.")
                 raise AccessDenied(
