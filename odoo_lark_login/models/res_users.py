@@ -221,16 +221,39 @@ class ResUsers(models.Model):
             )
 
         # _logger.info(f"Searching for existing user by openid: {open_id[:6]}...")
-        user = self.sudo().search(
-            [
-                "|",
-                ("openid", "=", open_id),
-                ("oauth_uid", "=", open_id),
-            ],
-            limit=1,
-        )
-
-        if not user:
+        user = self.sudo().search([("openid", "=", open_id)], limit=1)
+        
+        if user:
+            try:
+                # Existing user with openid - check if they already have a token
+                if user.oauth_access_token:
+                    # If user already has a token, use that instead of the new one
+                    # This ensures multiple browser sessions use the same token
+                    _logger.info(f"Reusing existing token for user {user.login} (ID: {user.id})")
+                    existing_token = user.oauth_access_token
+                    
+                    # Still update the openid to confirm it's valid
+                    user.write({
+                        "openid": open_id,
+                    })
+                    
+                    # Return existing token instead of the new one
+                    return (self.env.cr.dbname, user.login, existing_token)
+                else:
+                    # No existing token, so save the new one
+                    user.write({
+                        "openid": open_id,
+                        "oauth_access_token": lark_access_token,
+                    })
+                    
+                    _logger.info(f"Saved new token for existing user {user.login} (ID: {user.id})")
+                    return (self.env.cr.dbname, user.login, lark_access_token)
+                    
+            except Exception as e_existing:
+                _logger.exception(f"Error updating existing user with openid '{open_id}': {e_existing}")
+                raise AccessDenied(f"Error updating Lark user: {e_existing}")
+        else:
+            # User not found, try to create a new one
             # _logger.info(f"User not found by openid {open_id[:6]}. Searching by login/email: {email_to_use}...")
             if email_to_use:
                 user = self.sudo().search([("login", "=", email_to_use)], limit=1)
@@ -269,48 +292,48 @@ class ResUsers(models.Model):
                     raise AccessDenied(
                         _("Failed to create Odoo user account: %s") % e_create
                     )
-        if user:
+            if user:
+                try:
+                    # For multi-browser login support:
+                    # 1. Check if this is a first-time login or token update
+                    # 2. Store the open_id for user identification
+                    # 3. Only update the token if it's different to avoid overwriting active sessions
+                    
+                    update_values = {
+                        "openid": open_id,
+                    }
+                    
+                    # Only update oauth_access_token if it's different
+                    # This should allow multiple browser sessions to coexist
+                    if user.oauth_access_token != lark_access_token:
+                        _logger.info(f"Updating oauth_access_token for user ID {user.id}")
+                        update_values["oauth_access_token"] = lark_access_token
+                    
+                    user.write(update_values)
+                    
+                except Exception as e_final_write:
+                    _logger.exception(f"Failed during final write for user ID {user.id}.")
+                    raise AccessDenied(
+                        _("Failed to finalize user update: %s") % e_final_write
+                    )
+            if not user:
+                _logger.error(
+                    f"User record is unexpectedly missing after processing for open_id {open_id[:6]}"
+                )
+                raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
+                
+            # For new users or users found by email, we need to update both openid and oauth_access_token
             try:
-                # For multi-browser login support:
-                # 1. Check if this is a first-time login or token update
-                # 2. Store the open_id for user identification
-                # 3. Only update the token if it's different to avoid overwriting active sessions
-                
-                update_values = {
+                user.write({
                     "openid": open_id,
-                }
-                
-                # Only update oauth_access_token if it's different
-                # This should allow multiple browser sessions to coexist
-                if user.oauth_access_token != lark_access_token:
-                    _logger.info(f"Updating oauth_access_token for user ID {user.id}")
-                    update_values["oauth_access_token"] = lark_access_token
-                
-                user.write(update_values)
-                
+                    "oauth_access_token": lark_access_token,
+                })
+                _logger.info(f"Updated new/linked user {user.login} (ID: {user.id}) with Lark openid and token")
             except Exception as e_final_write:
                 _logger.exception(f"Failed during final write for user ID {user.id}.")
                 raise AccessDenied(
                     _("Failed to finalize user update: %s") % e_final_write
                 )
-        if not user:
-            _logger.error(
-                f"User record is unexpectedly missing after processing for open_id {open_id[:6]}"
-            )
-            raise AccessDenied("用户绑定错误：open_id=%s" % open_id)
-            
-        # For new users or users found by email, we need to update both openid and oauth_access_token
-        try:
-            user.write({
-                "openid": open_id,
-                "oauth_access_token": lark_access_token,
-            })
-            _logger.info(f"Updated new/linked user {user.login} (ID: {user.id}) with Lark openid and token")
-        except Exception as e_final_write:
-            _logger.exception(f"Failed during final write for user ID {user.id}.")
-            raise AccessDenied(
-                _("Failed to finalize user update: %s") % e_final_write
-            )
 
-        # Return the token for Odoo to store in the session
-        return self.env.cr.dbname, user.login, lark_access_token
+            # Return the token for Odoo to store in the session
+            return self.env.cr.dbname, user.login, lark_access_token
