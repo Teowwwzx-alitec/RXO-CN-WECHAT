@@ -7,27 +7,6 @@ from werkzeug.urls import url_encode
 from odoo import _, api, fields, models
 from odoo.exceptions import AccessDenied, ValidationError
 
-# Import the original auth_oauth_validate method to override it
-from odoo.addons.auth_oauth.models.res_users import Users as OAuthUsers
-
-# Save the original validation function for non-Lark providers
-original_auth_oauth_validate = OAuthUsers._auth_oauth_validate
-
-# Override the validation function to bypass token validation for Lark
-def patched_auth_oauth_validate(self, provider, access_token):
-    # Check if this is a Lark provider
-    if "open.larksuite.com/open-apis/authen/v1" in provider.validation_endpoint:
-        # For Lark, we bypass the standard token validation
-        # and just extract the open_id from the provider directly
-        oauth_uid = access_token  # For Lark, we're passing the code as access_token
-        return {'user_id': oauth_uid}
-    else:
-        # For all other providers, use the original validation
-        return original_auth_oauth_validate(self, provider, access_token)
-    
-# Apply the patch
-OAuthUsers._auth_oauth_validate = patched_auth_oauth_validate
-
 _logger = logging.getLogger(__name__)
 
 
